@@ -14,13 +14,16 @@ const (
 type FindingType string
 
 const (
-	FindingUnusedTable    FindingType = "UNUSED_TABLE"
-	FindingUnusedIndex    FindingType = "UNUSED_INDEX"
-	FindingBloatedIndex   FindingType = "BLOATED_INDEX"
-	FindingMissingVacuum  FindingType = "MISSING_VACUUM"
-	FindingNoPrimaryKey   FindingType = "NO_PRIMARY_KEY"
-	FindingDuplicateIndex FindingType = "DUPLICATE_INDEX"
-	FindingOK             FindingType = "OK"
+	FindingUnusedTable       FindingType = "UNUSED_TABLE"
+	FindingUnusedIndex       FindingType = "UNUSED_INDEX"
+	FindingBloatedIndex      FindingType = "BLOATED_INDEX"
+	FindingMissingVacuum     FindingType = "MISSING_VACUUM"
+	FindingNoPrimaryKey      FindingType = "NO_PRIMARY_KEY"
+	FindingDuplicateIndex    FindingType = "DUPLICATE_INDEX"
+	FindingMissingTable      FindingType = "MISSING_TABLE"
+	FindingUnreferencedTable FindingType = "UNREFERENCED_TABLE"
+	FindingCodeMatch         FindingType = "CODE_MATCH"
+	FindingOK                FindingType = "OK"
 )
 
 // Finding represents a single audit or check result.
