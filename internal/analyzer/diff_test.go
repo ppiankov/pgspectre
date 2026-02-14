@@ -29,7 +29,7 @@ func TestDiff_MissingTable(t *testing.T) {
 		Stats:  []postgres.TableStats{makeStats("public", "users", 10, 5)},
 	}
 
-	findings := Diff(scan, snap)
+	findings := Diff(&scan, snap)
 
 	var missing int
 	for _, f := range findings {
@@ -49,7 +49,7 @@ func TestDiff_CodeMatch(t *testing.T) {
 		Stats:  []postgres.TableStats{makeStats("public", "users", 10, 5)},
 	}
 
-	findings := Diff(scan, snap)
+	findings := Diff(&scan, snap)
 
 	var matched int
 	for _, f := range findings {
@@ -75,7 +75,7 @@ func TestDiff_UnreferencedTable(t *testing.T) {
 		},
 	}
 
-	findings := Diff(scan, snap)
+	findings := Diff(&scan, snap)
 
 	var unreferenced int
 	for _, f := range findings {
@@ -101,7 +101,7 @@ func TestDiff_ActiveUnreferencedTable_NotFlagged(t *testing.T) {
 		},
 	}
 
-	findings := Diff(scan, snap)
+	findings := Diff(&scan, snap)
 
 	for _, f := range findings {
 		if f.Type == FindingUnreferencedTable && f.Table == "active_table" {
@@ -117,7 +117,7 @@ func TestDiff_CaseInsensitive(t *testing.T) {
 		Stats:  []postgres.TableStats{makeStats("public", "users", 10, 5)},
 	}
 
-	findings := Diff(scan, snap)
+	findings := Diff(&scan, snap)
 
 	var matched int
 	for _, f := range findings {
@@ -134,7 +134,7 @@ func TestDiff_Empty(t *testing.T) {
 	scan := scanResult()
 	snap := &postgres.Snapshot{}
 
-	findings := Diff(scan, snap)
+	findings := Diff(&scan, snap)
 
 	// Should only have audit findings (none, since snapshot is empty)
 	for _, f := range findings {
@@ -154,7 +154,7 @@ func TestDiff_IncludesAuditFindings(t *testing.T) {
 		},
 	}
 
-	findings := Diff(scan, snap)
+	findings := Diff(&scan, snap)
 
 	var noPK int
 	for _, f := range findings {

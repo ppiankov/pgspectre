@@ -18,8 +18,9 @@ func tableKey(schema, table string) string {
 // Audit analyzes a catalog snapshot and returns findings.
 func Audit(snap *postgres.Snapshot) []Finding {
 	statsMap := make(map[string]postgres.TableStats, len(snap.Stats))
-	for _, s := range snap.Stats {
-		statsMap[tableKey(s.Schema, s.Name)] = s
+	for i := range snap.Stats {
+		s := &snap.Stats[i]
+		statsMap[tableKey(s.Schema, s.Name)] = *s
 	}
 
 	pkSet := make(map[string]bool)
@@ -50,7 +51,8 @@ func Audit(snap *postgres.Snapshot) []Finding {
 
 func detectUnusedTables(stats []postgres.TableStats) []Finding {
 	var findings []Finding
-	for _, s := range stats {
+	for i := range stats {
+		s := &stats[i]
 		if s.SeqScan == 0 && s.IdxScan == 0 {
 			findings = append(findings, Finding{
 				Type:     FindingUnusedTable,
@@ -120,7 +122,8 @@ func detectBloatedIndexes(indexes []postgres.IndexInfo, tableSizeMap map[string]
 
 func detectMissingVacuum(stats []postgres.TableStats, now time.Time) []Finding {
 	var findings []Finding
-	for _, s := range stats {
+	for i := range stats {
+		s := &stats[i]
 		// Only flag active tables (those with some scan activity)
 		if s.SeqScan == 0 && s.IdxScan == 0 {
 			continue
@@ -196,7 +199,7 @@ func detectDuplicateIndexes(indexes []postgres.IndexInfo) []Finding {
 }
 
 // latestVacuum returns the most recent vacuum timestamp (manual or auto).
-func latestVacuum(s postgres.TableStats) *time.Time {
+func latestVacuum(s *postgres.TableStats) *time.Time {
 	var latest *time.Time
 	for _, t := range []*time.Time{s.LastVacuum, s.LastAutovacuum} {
 		if t != nil && (latest == nil || t.After(*latest)) {

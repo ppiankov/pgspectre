@@ -58,7 +58,7 @@ func TestNewReport_Empty(t *testing.T) {
 func TestWriteText(t *testing.T) {
 	r := NewReport("audit", testFindings)
 	var buf bytes.Buffer
-	if err := Write(&buf, r, FormatText); err != nil {
+	if err := Write(&buf, &r, FormatText); err != nil {
 		t.Fatal(err)
 	}
 
@@ -83,7 +83,7 @@ func TestWriteText(t *testing.T) {
 func TestWriteText_Empty(t *testing.T) {
 	r := NewReport("audit", nil)
 	var buf bytes.Buffer
-	if err := Write(&buf, r, FormatText); err != nil {
+	if err := Write(&buf, &r, FormatText); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(buf.String(), "No findings.") {
@@ -94,7 +94,7 @@ func TestWriteText_Empty(t *testing.T) {
 func TestWriteJSON(t *testing.T) {
 	r := NewReport("audit", testFindings)
 	var buf bytes.Buffer
-	if err := Write(&buf, r, FormatJSON); err != nil {
+	if err := Write(&buf, &r, FormatJSON); err != nil {
 		t.Fatal(err)
 	}
 
