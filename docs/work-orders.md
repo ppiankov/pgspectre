@@ -186,31 +186,23 @@ defaults:
 
 ---
 
-## WO-09: Multi-line SQL buffering
+## WO-09: Multi-line SQL buffering ✅
 
 **Goal:** Scanner misses SQL split across lines. Buffer between SQL markers and scan assembled blocks.
 
-### Context
-Current scanner is line-by-line (`bufio.Scanner`). A `SELECT * FROM\n  users` is invisible — the FROM pattern never matches because `users` is on the next line. This is the #1 false-negative source.
-
-### Approach
-Not a full SQL parser. Context-aware line joining:
-- Detect SQL block start: backtick strings (Go), triple-quotes (Python), heredocs, `.sql` file boundaries
-- Buffer lines until block end
-- Join and run existing `ScanLine()` + `ScanLineColumns()` on the assembled block
-- Preserve original line number for the block start (for finding locations)
-- Single-line mode still works as fallback for non-block SQL
+### Implementation
+- Created `internal/scanner/buffer.go` with `sqlBuffer` struct: two-mode buffering (SQL files vs code files)
+- SQL files (.sql): buffer lines between semicolons, `splitOnSemicolons()` respects single-quoted strings
+- Code files: detect backtick blocks (Go/JS/TS) and triple-quote blocks (Python/Java), buffer until closing delimiter
+- `normalize()` joins buffered lines and collapses whitespace to single space
+- Modified `scanFile()` in scanner.go to use buffer: lines inside blocks are NOT scanned individually
+- 22 new buffer tests + 1 integration test covering multi-line .sql, Go backtick, Python triple-quote
 
 ### Files
-- `internal/scanner/buffer.go` — `SQLBuffer` with `Feed(line)` / `Flush()` / `InBlock() bool`
-- `internal/scanner/scanner.go` — integrate buffer into `ScanFile()`
-- `internal/scanner/buffer_test.go`
-
-### Acceptance
-- Multi-line `SELECT ... FROM users` across 3 lines detects `users` table
-- Go backtick strings, Python triple-quotes, raw `.sql` files all work
-- Existing single-line tests still pass
-- `make test` passes with -race
+- `internal/scanner/buffer.go` — sqlBuffer with feedSQL(), feedCode(), normalize(), splitOnSemicolons()
+- `internal/scanner/buffer_test.go` — 22 unit tests
+- `internal/scanner/scanner.go` — integrated buffer into scanFile()
+- `internal/scanner/scanner_test.go` — TestScan_MultiLineSQL integration test
 
 ---
 

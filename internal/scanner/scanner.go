@@ -85,36 +85,63 @@ func scanFile(path, relPath string) ([]TableRef, []ColumnRef, error) {
 	}
 	defer func() { _ = f.Close() }()
 
+	ext := strings.ToLower(filepath.Ext(path))
+	buf := newSQLBuffer()
+
 	var refs []TableRef
 	var colRefs []ColumnRef
-	sc := bufio.NewScanner(f)
-	lineNum := 0
 
-	for sc.Scan() {
-		lineNum++
-		line := sc.Text()
-
-		for _, m := range ScanLine(line) {
+	scanText := func(text string, line int) {
+		for _, m := range ScanLine(text) {
 			refs = append(refs, TableRef{
 				Table:   m.Table,
 				Schema:  m.Schema,
 				File:    relPath,
-				Line:    lineNum,
+				Line:    line,
 				Pattern: m.Pattern,
 				Context: m.Context,
 			})
 		}
-
-		for _, cm := range ScanLineColumns(line) {
+		for _, cm := range ScanLineColumns(text) {
 			colRefs = append(colRefs, ColumnRef{
 				Table:   cm.Table,
 				Column:  cm.Column,
 				Schema:  cm.Schema,
 				File:    relPath,
-				Line:    lineNum,
+				Line:    line,
 				Context: cm.Context,
 			})
 		}
+	}
+
+	sc := bufio.NewScanner(f)
+	lineNum := 0
+
+	if ext == ".sql" {
+		for sc.Scan() {
+			lineNum++
+			for _, s := range buf.feedSQL(lineNum, sc.Text()) {
+				scanText(s.text, s.lineNum)
+			}
+		}
+	} else {
+		for sc.Scan() {
+			lineNum++
+			line := sc.Text()
+
+			stmt, buffered := buf.feedCode(lineNum, line, ext)
+			if stmt != nil {
+				scanText(stmt.text, stmt.lineNum)
+			}
+			if !buffered {
+				scanText(line, lineNum)
+			}
+		}
+	}
+
+	// Flush any remaining buffered content
+	if s := buf.flush(); s != nil {
+		scanText(s.text, s.lineNum)
 	}
 
 	return refs, colRefs, sc.Err()
