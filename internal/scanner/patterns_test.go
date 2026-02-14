@@ -1,6 +1,9 @@
 package scanner
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestScanLine_SQLFrom(t *testing.T) {
 	tests := []struct {
@@ -196,6 +199,136 @@ func TestScanLine_RejectsKeywords(t *testing.T) {
 		if m.Table == "SELECT" || m.Table == "select" {
 			t.Errorf("should not match SQL keyword as table: %v", m)
 		}
+	}
+}
+
+func TestScanLineColumns_Select(t *testing.T) {
+	matches := ScanLineColumns(`SELECT name, email FROM users`)
+	found := make(map[string]bool)
+	for _, m := range matches {
+		found[m.Column] = true
+	}
+	for _, want := range []string{"name", "email"} {
+		if !found[want] {
+			t.Errorf("expected column %q, got %v", want, matches)
+		}
+	}
+}
+
+func TestScanLineColumns_SelectWithTable(t *testing.T) {
+	matches := ScanLineColumns(`SELECT u.name, u.email FROM users u`)
+	found := make(map[string]bool)
+	for _, m := range matches {
+		if m.Table != "" {
+			found[m.Table+"."+m.Column] = true
+		}
+	}
+	// Should find dotted references
+	if !found["u.name"] && !found["u.email"] {
+		t.Errorf("expected table.column refs, got %v", matches)
+	}
+}
+
+func TestScanLineColumns_Where(t *testing.T) {
+	matches := ScanLineColumns(`WHERE status = 'active' AND age > 18`)
+	found := make(map[string]bool)
+	for _, m := range matches {
+		found[m.Column] = true
+	}
+	if !found["status"] {
+		t.Errorf("expected column status, got %v", matches)
+	}
+	if !found["age"] {
+		t.Errorf("expected column age, got %v", matches)
+	}
+}
+
+func TestScanLineColumns_Insert(t *testing.T) {
+	matches := ScanLineColumns(`INSERT INTO users (name, email, status) VALUES ('a', 'b', 'c')`)
+	found := make(map[string]bool)
+	for _, m := range matches {
+		found[m.Column] = true
+	}
+	for _, want := range []string{"name", "email", "status"} {
+		if !found[want] {
+			t.Errorf("expected column %q, got %v", want, matches)
+		}
+	}
+}
+
+func TestScanLineColumns_DottedRef(t *testing.T) {
+	matches := ScanLineColumns(`users.email = orders.user_id`)
+	found := make(map[string]bool)
+	for _, m := range matches {
+		if m.Table != "" {
+			found[m.Table+"."+m.Column] = true
+		}
+	}
+	if !found["users.email"] {
+		t.Errorf("expected users.email, got %v", matches)
+	}
+	if !found["orders.user_id"] {
+		t.Errorf("expected orders.user_id, got %v", matches)
+	}
+}
+
+func TestScanLineColumns_OrderBy(t *testing.T) {
+	matches := ScanLineColumns(`ORDER BY created_at DESC`)
+	found := false
+	for _, m := range matches {
+		if m.Column == "created_at" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected column created_at, got %v", matches)
+	}
+}
+
+func TestScanLineColumns_RejectsKeywords(t *testing.T) {
+	matches := ScanLineColumns(`SELECT COUNT(*) FROM users WHERE id IN (SELECT id FROM orders)`)
+	for _, m := range matches {
+		lower := strings.ToLower(m.Column)
+		if lower == "count" || lower == "select" || lower == "from" {
+			t.Errorf("should not match keyword/function as column: %v", m)
+		}
+	}
+}
+
+func TestScanLineColumns_NoMatch(t *testing.T) {
+	lines := []string{
+		"fmt.Println(\"hello world\")",
+		"var x = 42",
+		"",
+	}
+	for _, line := range lines {
+		matches := ScanLineColumns(line)
+		if len(matches) > 0 {
+			t.Errorf("unexpected column match in %q: %v", line, matches)
+		}
+	}
+}
+
+func TestIsValidColumnName(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		valid bool
+	}{
+		{"normal", "email", true},
+		{"too short", "x", false},
+		{"keyword", "select", false},
+		{"function", "count", false},
+		{"numeric", "42foo", false},
+		{"underscore", "user_id", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := isValidColumnName(tt.input)
+			if got != tt.valid {
+				t.Errorf("isValidColumnName(%q) = %v, want %v", tt.input, got, tt.valid)
+			}
+		})
 	}
 }
 

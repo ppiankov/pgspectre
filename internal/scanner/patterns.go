@@ -147,6 +147,152 @@ func ScanLine(line string) []tableMatch {
 	return matches
 }
 
+type columnMatch struct {
+	Table   string
+	Column  string
+	Schema  string
+	Context Context
+}
+
+// Column extraction patterns.
+var columnPatterns = []struct {
+	re      *regexp.Regexp
+	extract func([]string) []columnMatch
+}{
+	// table.column dotted reference (e.g., users.email, u.name)
+	{re: regexp.MustCompile(`(?i)\b(\w+)\.(\w+)\b`), extract: extractDottedColumn},
+
+	// SELECT col1, col2, ... FROM table
+	{re: regexp.MustCompile(`(?i)\bSELECT\s+(.+?)\s+FROM\s+`), extract: extractSelectColumns},
+
+	// WHERE/AND/OR col = / col IN / col IS / col LIKE / col >
+	{re: regexp.MustCompile(`(?i)\b(?:WHERE|AND|OR)\s+(\w+)\s*(?:=|<|>|!=|<>|IS\b|IN\b|LIKE\b|BETWEEN\b|NOT\b)`),
+		extract: extractConditionColumn},
+
+	// ORDER BY col / GROUP BY col
+	{re: regexp.MustCompile(`(?i)\b(?:ORDER|GROUP)\s+BY\s+(\w+)`),
+		extract: extractByColumn},
+
+	// INSERT INTO table (col1, col2, ...)
+	{re: regexp.MustCompile(`(?i)\bINSERT\s+INTO\s+\w+\s*\(([^)]+)\)`),
+		extract: extractInsertColumns},
+}
+
+// SQL functions that should not be treated as column names.
+var sqlFunctions = map[string]bool{
+	"count": true, "sum": true, "avg": true, "min": true, "max": true,
+	"coalesce": true, "nullif": true, "cast": true, "extract": true,
+	"lower": true, "upper": true, "trim": true, "length": true,
+	"now": true, "current_timestamp": true, "current_date": true,
+	"row_number": true, "rank": true, "dense_rank": true,
+	"array_agg": true, "string_agg": true, "json_agg": true,
+	"exists": true, "not": true, "case": true,
+}
+
+func isValidColumnName(name string) bool {
+	if len(name) < 2 || len(name) > 120 {
+		return false
+	}
+	lower := strings.ToLower(name)
+	if sqlKeywords[lower] || sqlFunctions[lower] {
+		return false
+	}
+	// Reject numeric literals
+	if name[0] >= '0' && name[0] <= '9' {
+		return false
+	}
+	return true
+}
+
+func extractDottedColumn(m []string) []columnMatch {
+	table, col := m[1], m[2]
+	if !isValidTableName(table) || !isValidColumnName(col) {
+		return nil
+	}
+	// Reject if column starts with uppercase — likely a method call (e.g., fmt.Println)
+	if col[0] >= 'A' && col[0] <= 'Z' {
+		return nil
+	}
+	return []columnMatch{{Table: table, Column: col, Context: ContextUnknown}}
+}
+
+func extractSelectColumns(m []string) []columnMatch {
+	colList := m[1]
+	if strings.Contains(strings.ToUpper(colList), "*") {
+		return nil // SELECT *
+	}
+	var matches []columnMatch
+	for _, part := range strings.Split(colList, ",") {
+		col := strings.TrimSpace(part)
+		// Handle "col AS alias" — take the column, not alias
+		if idx := strings.Index(strings.ToUpper(col), " AS "); idx > 0 {
+			col = strings.TrimSpace(col[:idx])
+		}
+		// Handle table.col — extract as dotted ref (allow single-char aliases like u.name)
+		if dotIdx := strings.Index(col, "."); dotIdx > 0 {
+			table := col[:dotIdx]
+			colName := col[dotIdx+1:]
+			if !sqlKeywords[strings.ToLower(table)] && isValidColumnName(colName) {
+				matches = append(matches, columnMatch{Table: table, Column: colName, Context: ContextSelect})
+			}
+			continue
+		}
+		if isValidColumnName(col) {
+			matches = append(matches, columnMatch{Column: col, Context: ContextSelect})
+		}
+	}
+	return matches
+}
+
+func extractConditionColumn(m []string) []columnMatch {
+	col := m[1]
+	if !isValidColumnName(col) {
+		return nil
+	}
+	return []columnMatch{{Column: col, Context: ContextSelect}}
+}
+
+func extractByColumn(m []string) []columnMatch {
+	col := m[1]
+	if !isValidColumnName(col) {
+		return nil
+	}
+	return []columnMatch{{Column: col, Context: ContextSelect}}
+}
+
+func extractInsertColumns(m []string) []columnMatch {
+	colList := m[1]
+	var matches []columnMatch
+	for _, part := range strings.Split(colList, ",") {
+		col := strings.TrimSpace(part)
+		if isValidColumnName(col) {
+			matches = append(matches, columnMatch{Column: col, Context: ContextInsert})
+		}
+	}
+	return matches
+}
+
+// ScanLineColumns extracts column references from a single line of code.
+func ScanLineColumns(line string) []columnMatch {
+	var matches []columnMatch
+	seen := make(map[string]bool)
+
+	for _, p := range columnPatterns {
+		for _, m := range p.re.FindAllStringSubmatch(line, -1) {
+			for _, cm := range p.extract(m) {
+				key := cm.Table + "." + cm.Column
+				if seen[key] {
+					continue
+				}
+				seen[key] = true
+				matches = append(matches, cm)
+			}
+		}
+	}
+
+	return matches
+}
+
 func isValidTableName(name string) bool {
 	if len(name) < 2 || len(name) > 120 {
 		return false

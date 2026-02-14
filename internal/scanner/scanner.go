@@ -59,12 +59,13 @@ func Scan(repoPath string) (ScanResult, error) {
 		}
 
 		relPath, _ := filepath.Rel(repoPath, path)
-		refs, err := scanFile(path, relPath)
+		refs, colRefs, err := scanFile(path, relPath)
 		if err != nil {
 			return fmt.Errorf("scan %s: %w", relPath, err)
 		}
 
 		result.Refs = append(result.Refs, refs...)
+		result.ColumnRefs = append(result.ColumnRefs, colRefs...)
 		result.FilesScanned++
 		return nil
 	})
@@ -73,23 +74,25 @@ func Scan(repoPath string) (ScanResult, error) {
 	}
 
 	result.Tables = uniqueTables(result.Refs)
+	result.Columns = uniqueColumns(result.ColumnRefs)
 	return result, nil
 }
 
-func scanFile(path, relPath string) ([]TableRef, error) {
+func scanFile(path, relPath string) ([]TableRef, []ColumnRef, error) {
 	f, err := os.Open(path)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	defer func() { _ = f.Close() }()
 
 	var refs []TableRef
-	scanner := bufio.NewScanner(f)
+	var colRefs []ColumnRef
+	sc := bufio.NewScanner(f)
 	lineNum := 0
 
-	for scanner.Scan() {
+	for sc.Scan() {
 		lineNum++
-		line := scanner.Text()
+		line := sc.Text()
 
 		for _, m := range ScanLine(line) {
 			refs = append(refs, TableRef{
@@ -101,9 +104,35 @@ func scanFile(path, relPath string) ([]TableRef, error) {
 				Context: m.Context,
 			})
 		}
+
+		for _, cm := range ScanLineColumns(line) {
+			colRefs = append(colRefs, ColumnRef{
+				Table:   cm.Table,
+				Column:  cm.Column,
+				Schema:  cm.Schema,
+				File:    relPath,
+				Line:    lineNum,
+				Context: cm.Context,
+			})
+		}
 	}
 
-	return refs, scanner.Err()
+	return refs, colRefs, sc.Err()
+}
+
+func uniqueColumns(refs []ColumnRef) []string {
+	seen := make(map[string]bool)
+	for _, r := range refs {
+		key := strings.ToLower(r.Table) + "." + strings.ToLower(r.Column)
+		seen[key] = true
+	}
+
+	cols := make([]string, 0, len(seen))
+	for c := range seen {
+		cols = append(cols, c)
+	}
+	sort.Strings(cols)
+	return cols
 }
 
 func uniqueTables(refs []TableRef) []string {

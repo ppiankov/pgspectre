@@ -1,6 +1,7 @@
 package analyzer
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/ppiankov/pgspectre/internal/postgres"
@@ -29,7 +30,7 @@ func TestDiff_MissingTable(t *testing.T) {
 		Stats:  []postgres.TableStats{makeStats("public", "users", 10, 5)},
 	}
 
-	findings := Diff(&scan, snap)
+	findings := Diff(&scan, snap, DefaultAuditOptions())
 
 	var missing int
 	for _, f := range findings {
@@ -49,7 +50,7 @@ func TestDiff_CodeMatch(t *testing.T) {
 		Stats:  []postgres.TableStats{makeStats("public", "users", 10, 5)},
 	}
 
-	findings := Diff(&scan, snap)
+	findings := Diff(&scan, snap, DefaultAuditOptions())
 
 	var matched int
 	for _, f := range findings {
@@ -75,7 +76,7 @@ func TestDiff_UnreferencedTable(t *testing.T) {
 		},
 	}
 
-	findings := Diff(&scan, snap)
+	findings := Diff(&scan, snap, DefaultAuditOptions())
 
 	var unreferenced int
 	for _, f := range findings {
@@ -101,7 +102,7 @@ func TestDiff_ActiveUnreferencedTable_NotFlagged(t *testing.T) {
 		},
 	}
 
-	findings := Diff(&scan, snap)
+	findings := Diff(&scan, snap, DefaultAuditOptions())
 
 	for _, f := range findings {
 		if f.Type == FindingUnreferencedTable && f.Table == "active_table" {
@@ -117,7 +118,7 @@ func TestDiff_CaseInsensitive(t *testing.T) {
 		Stats:  []postgres.TableStats{makeStats("public", "users", 10, 5)},
 	}
 
-	findings := Diff(&scan, snap)
+	findings := Diff(&scan, snap, DefaultAuditOptions())
 
 	var matched int
 	for _, f := range findings {
@@ -134,12 +135,87 @@ func TestDiff_Empty(t *testing.T) {
 	scan := scanResult()
 	snap := &postgres.Snapshot{}
 
-	findings := Diff(&scan, snap)
+	findings := Diff(&scan, snap, DefaultAuditOptions())
 
 	// Should only have audit findings (none, since snapshot is empty)
 	for _, f := range findings {
 		if f.Type == FindingMissingTable || f.Type == FindingUnreferencedTable || f.Type == FindingCodeMatch {
 			t.Errorf("unexpected finding type %s with empty inputs", f.Type)
+		}
+	}
+}
+
+func TestDiff_MissingColumn(t *testing.T) {
+	scan := scanResult("users")
+	scan.ColumnRefs = []scanner.ColumnRef{
+		{Table: "users", Column: "email", File: "app.go", Line: 5},
+		{Table: "users", Column: "deleted_at", File: "app.go", Line: 10},
+	}
+	snap := &postgres.Snapshot{
+		Tables: []postgres.TableInfo{tableInfo("public", "users", 100)},
+		Columns: []postgres.ColumnInfo{
+			{Schema: "public", Table: "users", Name: "id", DataType: "integer"},
+			{Schema: "public", Table: "users", Name: "email", DataType: "text"},
+		},
+		Stats: []postgres.TableStats{makeStats("public", "users", 10, 5)},
+	}
+
+	findings := Diff(&scan, snap, DefaultAuditOptions())
+
+	var missing int
+	for _, f := range findings {
+		if f.Type == FindingMissingColumn && f.Table == "users" {
+			if !strings.Contains(f.Message, "deleted_at") {
+				t.Errorf("expected message about deleted_at, got %q", f.Message)
+			}
+			missing++
+		}
+	}
+	if missing != 1 {
+		t.Errorf("expected 1 MISSING_COLUMN, got %d", missing)
+	}
+}
+
+func TestDiff_ColumnExists(t *testing.T) {
+	scan := scanResult("users")
+	scan.ColumnRefs = []scanner.ColumnRef{
+		{Table: "users", Column: "email", File: "app.go", Line: 5},
+	}
+	snap := &postgres.Snapshot{
+		Tables: []postgres.TableInfo{tableInfo("public", "users", 100)},
+		Columns: []postgres.ColumnInfo{
+			{Schema: "public", Table: "users", Name: "email", DataType: "text"},
+		},
+		Stats: []postgres.TableStats{makeStats("public", "users", 10, 5)},
+	}
+
+	findings := Diff(&scan, snap, DefaultAuditOptions())
+
+	for _, f := range findings {
+		if f.Type == FindingMissingColumn {
+			t.Errorf("no MISSING_COLUMN expected, got %v", f)
+		}
+	}
+}
+
+func TestDiff_ColumnSkipsUnknownTable(t *testing.T) {
+	scan := scanResult("users")
+	scan.ColumnRefs = []scanner.ColumnRef{
+		{Table: "nonexistent", Column: "id", File: "app.go", Line: 5},
+	}
+	snap := &postgres.Snapshot{
+		Tables: []postgres.TableInfo{tableInfo("public", "users", 100)},
+		Columns: []postgres.ColumnInfo{
+			{Schema: "public", Table: "users", Name: "id", DataType: "integer"},
+		},
+		Stats: []postgres.TableStats{makeStats("public", "users", 10, 5)},
+	}
+
+	findings := Diff(&scan, snap, DefaultAuditOptions())
+
+	for _, f := range findings {
+		if f.Type == FindingMissingColumn {
+			t.Errorf("should not flag column for non-existent table, got %v", f)
 		}
 	}
 }
@@ -154,7 +230,7 @@ func TestDiff_IncludesAuditFindings(t *testing.T) {
 		},
 	}
 
-	findings := Diff(&scan, snap)
+	findings := Diff(&scan, snap, DefaultAuditOptions())
 
 	var noPK int
 	for _, f := range findings {
