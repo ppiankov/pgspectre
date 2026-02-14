@@ -66,19 +66,19 @@ func newAuditCmd() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("server version: %w", err)
 			}
-			fmt.Fprintf(cmd.ErrOrStderr(), "Connected to PostgreSQL %s\n", ver)
+			_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Connected to PostgreSQL %s\n", ver)
 
 			snap, err := inspector.Inspect(ctx)
 			if err != nil {
 				return fmt.Errorf("inspect: %w", err)
 			}
-			fmt.Fprintf(cmd.ErrOrStderr(), "Inspected %d tables, %d indexes, %d constraints\n",
+			_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Inspected %d tables, %d indexes, %d constraints\n",
 				len(snap.Tables), len(snap.Indexes), len(snap.Constraints))
 
 			findings := analyzer.Audit(snap)
 			report := reporter.NewReport("audit", findings)
 
-			if err := reporter.Write(cmd.OutOrStdout(), report, reporter.Format(format)); err != nil {
+			if err := reporter.Write(cmd.OutOrStdout(), &report, reporter.Format(format)); err != nil {
 				return fmt.Errorf("write report: %w", err)
 			}
 
@@ -114,12 +114,12 @@ func newCheckCmd() *cobra.Command {
 			}
 
 			// Scan code repo (no timeout needed — local filesystem)
-			fmt.Fprintf(cmd.ErrOrStderr(), "Scanning repo %s...\n", repo)
+			_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Scanning repo %s...\n", repo)
 			scan, err := scanner.Scan(repo)
 			if err != nil {
 				return fmt.Errorf("scan repo: %w", err)
 			}
-			fmt.Fprintf(cmd.ErrOrStderr(), "Found %d table references in %d files\n",
+			_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Found %d table references in %d files\n",
 				len(scan.Refs), scan.FilesScanned)
 
 			// Connect to PostgreSQL
@@ -136,20 +136,20 @@ func newCheckCmd() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("server version: %w", err)
 			}
-			fmt.Fprintf(cmd.ErrOrStderr(), "Connected to PostgreSQL %s\n", ver)
+			_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Connected to PostgreSQL %s\n", ver)
 
 			snap, err := inspector.Inspect(ctx)
 			if err != nil {
 				return fmt.Errorf("inspect: %w", err)
 			}
-			fmt.Fprintf(cmd.ErrOrStderr(), "Inspected %d tables, %d indexes, %d constraints\n",
+			_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Inspected %d tables, %d indexes, %d constraints\n",
 				len(snap.Tables), len(snap.Indexes), len(snap.Constraints))
 
 			// Run diff analysis
-			findings := analyzer.Diff(scan, snap)
+			findings := analyzer.Diff(&scan, snap)
 			report := reporter.NewReport("check", findings)
 
-			if err := reporter.Write(cmd.OutOrStdout(), report, reporter.Format(format)); err != nil {
+			if err := reporter.Write(cmd.OutOrStdout(), &report, reporter.Format(format)); err != nil {
 				return fmt.Errorf("write report: %w", err)
 			}
 

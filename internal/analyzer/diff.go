@@ -10,7 +10,7 @@ import (
 
 // Diff compares code repo references against the live database snapshot.
 // It also includes audit findings for cluster-only issues.
-func Diff(scan scanner.ScanResult, snap *postgres.Snapshot) []Finding {
+func Diff(scan *scanner.ScanResult, snap *postgres.Snapshot) []Finding {
 	// Build lookup of DB tables by lowercase name
 	dbTables := make(map[string]postgres.TableInfo, len(snap.Tables))
 	for _, t := range snap.Tables {
@@ -19,8 +19,9 @@ func Diff(scan scanner.ScanResult, snap *postgres.Snapshot) []Finding {
 
 	// Build lookup of DB table stats by lowercase name
 	statsMap := make(map[string]postgres.TableStats, len(snap.Stats))
-	for _, s := range snap.Stats {
-		statsMap[strings.ToLower(s.Name)] = s
+	for i := range snap.Stats {
+		s := &snap.Stats[i]
+		statsMap[strings.ToLower(s.Name)] = *s
 	}
 
 	// Build set of code-referenced table names (lowercased)

@@ -75,7 +75,7 @@ func NewReport(command string, findings []analyzer.Finding) Report {
 }
 
 // Write outputs the report in the given format.
-func Write(w io.Writer, report Report, format Format) error {
+func Write(w io.Writer, report *Report, format Format) error {
 	switch format {
 	case FormatJSON:
 		return writeJSON(w, report)
@@ -84,7 +84,7 @@ func Write(w io.Writer, report Report, format Format) error {
 	}
 }
 
-func writeJSON(w io.Writer, report Report) error {
+func writeJSON(w io.Writer, report *Report) error {
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
 	return enc.Encode(report)
@@ -97,7 +97,7 @@ var severityLabel = map[analyzer.Severity]string{
 	analyzer.SeverityInfo:   "INFO",
 }
 
-func writeText(w io.Writer, report Report) error {
+func writeText(w io.Writer, report *Report) error {
 	if report.Summary.Total == 0 {
 		_, err := fmt.Fprintln(w, "No findings.")
 		return err
