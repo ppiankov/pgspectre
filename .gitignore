@@ -1,1 +1,36 @@
+# Binaries
+bin/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test artifacts
+*.test
+*.out
+coverage.html
+
+# Build artifacts
+dist/
+go.work
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Secrets
+.env
+*.pem
+*.key
+*.crt
+
+# Context snapshots
+
+# OS
+.DS_Store
+Thumbs.db
 
