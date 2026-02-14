@@ -1,8 +1,11 @@
 package cli
 
 import (
+	"context"
 	"fmt"
+	"time"
 
+	"github.com/ppiankov/pgspectre/internal/postgres"
 	"github.com/spf13/cobra"
 )
 
@@ -40,7 +43,35 @@ func newAuditCmd() *cobra.Command {
 		Use:   "audit",
 		Short: "Cluster-only analysis: unused tables, indexes, missing stats",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return fmt.Errorf("audit command not implemented yet")
+			if dbURL == "" {
+				return fmt.Errorf("--db-url is required")
+			}
+
+			ctx, cancel := context.WithTimeout(cmd.Context(), 30*time.Second)
+			defer cancel()
+
+			inspector, err := postgres.NewInspector(ctx, postgres.Config{URL: dbURL})
+			if err != nil {
+				return fmt.Errorf("connect: %w", err)
+			}
+			defer inspector.Close()
+
+			version, err := inspector.ServerVersion(ctx)
+			if err != nil {
+				return fmt.Errorf("server version: %w", err)
+			}
+			fmt.Fprintf(cmd.ErrOrStderr(), "Connected to PostgreSQL %s\n", version)
+
+			snap, err := inspector.Inspect(ctx)
+			if err != nil {
+				return fmt.Errorf("inspect: %w", err)
+			}
+
+			fmt.Fprintf(cmd.ErrOrStderr(), "Found %d tables, %d indexes, %d constraints\n",
+				len(snap.Tables), len(snap.Indexes), len(snap.Constraints))
+
+			// TODO(WO-03): run audit analysis and produce report
+			return nil
 		},
 	}
 }
