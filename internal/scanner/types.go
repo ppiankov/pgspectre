@@ -1,0 +1,41 @@
+package scanner
+
+// PatternType identifies how a table reference was detected.
+type PatternType string
+
+const (
+	PatternSQL       PatternType = "sql"
+	PatternORM       PatternType = "orm"
+	PatternMigration PatternType = "migration"
+)
+
+// Context describes the SQL operation context.
+type Context string
+
+const (
+	ContextSelect  Context = "SELECT"
+	ContextInsert  Context = "INSERT"
+	ContextUpdate  Context = "UPDATE"
+	ContextDelete  Context = "DELETE"
+	ContextDDL     Context = "DDL"
+	ContextUnknown Context = "UNKNOWN"
+)
+
+// TableRef is a single reference to a database table found in code.
+type TableRef struct {
+	Table   string      `json:"table"`
+	Schema  string      `json:"schema,omitempty"`
+	File    string      `json:"file"`
+	Line    int         `json:"line"`
+	Pattern PatternType `json:"pattern"`
+	Context Context     `json:"context"`
+}
+
+// ScanResult holds all table references found in a code repository.
+type ScanResult struct {
+	RepoPath     string     `json:"repoPath"`
+	Refs         []TableRef `json:"refs"`
+	Tables       []string   `json:"tables"`
+	FilesScanned int        `json:"filesScanned"`
+	FilesSkipped int        `json:"filesSkipped,omitempty"`
+}
