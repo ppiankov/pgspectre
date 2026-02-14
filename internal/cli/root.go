@@ -3,9 +3,12 @@ package cli
 import (
 	"context"
 	"fmt"
+	"os"
 	"time"
 
+	"github.com/ppiankov/pgspectre/internal/analyzer"
 	"github.com/ppiankov/pgspectre/internal/postgres"
+	"github.com/ppiankov/pgspectre/internal/reporter"
 	"github.com/spf13/cobra"
 )
 
@@ -39,7 +42,9 @@ func newVersionCmd(version string) *cobra.Command {
 }
 
 func newAuditCmd() *cobra.Command {
-	return &cobra.Command{
+	var format string
+
+	cmd := &cobra.Command{
 		Use:   "audit",
 		Short: "Cluster-only analysis: unused tables, indexes, missing stats",
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -56,24 +61,37 @@ func newAuditCmd() *cobra.Command {
 			}
 			defer inspector.Close()
 
-			version, err := inspector.ServerVersion(ctx)
+			ver, err := inspector.ServerVersion(ctx)
 			if err != nil {
 				return fmt.Errorf("server version: %w", err)
 			}
-			fmt.Fprintf(cmd.ErrOrStderr(), "Connected to PostgreSQL %s\n", version)
+			fmt.Fprintf(cmd.ErrOrStderr(), "Connected to PostgreSQL %s\n", ver)
 
 			snap, err := inspector.Inspect(ctx)
 			if err != nil {
 				return fmt.Errorf("inspect: %w", err)
 			}
-
-			fmt.Fprintf(cmd.ErrOrStderr(), "Found %d tables, %d indexes, %d constraints\n",
+			fmt.Fprintf(cmd.ErrOrStderr(), "Inspected %d tables, %d indexes, %d constraints\n",
 				len(snap.Tables), len(snap.Indexes), len(snap.Constraints))
 
-			// TODO(WO-03): run audit analysis and produce report
+			findings := analyzer.Audit(snap)
+			report := reporter.NewReport("audit", findings)
+
+			if err := reporter.Write(cmd.OutOrStdout(), report, reporter.Format(format)); err != nil {
+				return fmt.Errorf("write report: %w", err)
+			}
+
+			code := analyzer.ExitCode(report.MaxSeverity)
+			if code != 0 {
+				os.Exit(code)
+			}
 			return nil
 		},
 	}
+
+	cmd.Flags().StringVar(&format, "format", "text", "output format: text or json")
+
+	return cmd
 }
 
 func newCheckCmd() *cobra.Command {
