@@ -154,6 +154,54 @@ func TestScan_Deduplication(t *testing.T) {
 	}
 }
 
+func TestScan_MultiLineSQL(t *testing.T) {
+	dir := t.TempDir()
+
+	// Multi-line SQL file
+	writeFile(t, dir, "query.sql", `SELECT
+    name,
+    email
+FROM users
+WHERE active = true;
+
+INSERT INTO orders (user_id, product_id)
+VALUES (1, 2);`)
+
+	// Go backtick multi-line string
+	writeFile(t, dir, "repo.go", "package main\nvar q = `SELECT\n  name,\n  email\nFROM accounts\nWHERE id = 1`\n")
+
+	// Python triple-quote multi-line string
+	writeFile(t, dir, "app.py", "query = \"\"\"SELECT\n  status\nFROM payments\nWHERE amount > 100\"\"\"\n")
+
+	result, err := Scan(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tableSet := make(map[string]bool)
+	for _, tbl := range result.Tables {
+		tableSet[tbl] = true
+	}
+
+	for _, want := range []string{"users", "orders", "accounts", "payments"} {
+		if !tableSet[want] {
+			t.Errorf("expected table %q from multi-line SQL, got %v", want, result.Tables)
+		}
+	}
+
+	// Verify columns were extracted from multi-line SELECT
+	colSet := make(map[string]bool)
+	for _, c := range result.ColumnRefs {
+		colSet[c.Column] = true
+	}
+
+	for _, want := range []string{"name", "email", "status"} {
+		if !colSet[want] {
+			t.Errorf("expected column %q from multi-line SELECT, got columns: %v", want, result.Columns)
+		}
+	}
+}
+
 func TestUniqueTables_Sorted(t *testing.T) {
 	refs := []TableRef{
 		{Table: "Zebra"},
