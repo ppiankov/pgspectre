@@ -21,6 +21,7 @@ const (
 	FindingNoPrimaryKey      FindingType = "NO_PRIMARY_KEY"
 	FindingDuplicateIndex    FindingType = "DUPLICATE_INDEX"
 	FindingMissingTable      FindingType = "MISSING_TABLE"
+	FindingMissingColumn     FindingType = "MISSING_COLUMN"
 	FindingUnreferencedTable FindingType = "UNREFERENCED_TABLE"
 	FindingCodeMatch         FindingType = "CODE_MATCH"
 	FindingOK                FindingType = "OK"
@@ -34,6 +35,22 @@ type Finding struct {
 	Table    string      `json:"table"`
 	Index    string      `json:"index,omitempty"`
 	Message  string      `json:"message"`
+}
+
+// AuditOptions controls thresholds and exclusions for analysis.
+type AuditOptions struct {
+	VacuumDays     int
+	BloatMinBytes  int64
+	ExcludeTables  []string
+	ExcludeSchemas []string
+}
+
+// DefaultAuditOptions returns sensible defaults matching the config defaults.
+func DefaultAuditOptions() AuditOptions {
+	return AuditOptions{
+		VacuumDays:    30,
+		BloatMinBytes: 1024 * 1024, // 1 MB
+	}
 }
 
 var severityOrder = map[Severity]int{

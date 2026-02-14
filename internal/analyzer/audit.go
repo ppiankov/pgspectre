@@ -8,15 +8,24 @@ import (
 	"github.com/ppiankov/pgspectre/internal/postgres"
 )
 
-const missingVacuumThreshold = 30 * 24 * time.Hour
-
 // tableKey builds a lookup key from schema and table name.
 func tableKey(schema, table string) string {
 	return schema + "." + table
 }
 
 // Audit analyzes a catalog snapshot and returns findings.
-func Audit(snap *postgres.Snapshot) []Finding {
+func Audit(snap *postgres.Snapshot, opts AuditOptions) []Finding {
+	excludeTable := make(map[string]bool, len(opts.ExcludeTables))
+	for _, t := range opts.ExcludeTables {
+		excludeTable[strings.ToLower(t)] = true
+	}
+	excludeSchema := make(map[string]bool, len(opts.ExcludeSchemas))
+	for _, s := range opts.ExcludeSchemas {
+		excludeSchema[strings.ToLower(s)] = true
+	}
+
+	vacuumThreshold := time.Duration(opts.VacuumDays) * 24 * time.Hour
+	bloatMin := opts.BloatMinBytes
 	statsMap := make(map[string]postgres.TableStats, len(snap.Stats))
 	for i := range snap.Stats {
 		s := &snap.Stats[i]
@@ -37,14 +46,40 @@ func Audit(snap *postgres.Snapshot) []Finding {
 		}
 	}
 
+	// Filter stats and tables by exclusions
+	var filteredStats []postgres.TableStats
+	for i := range snap.Stats {
+		s := &snap.Stats[i]
+		if excludeTable[strings.ToLower(s.Name)] || excludeSchema[strings.ToLower(s.Schema)] {
+			continue
+		}
+		filteredStats = append(filteredStats, *s)
+	}
+
+	var filteredTables []postgres.TableInfo
+	for _, t := range snap.Tables {
+		if excludeTable[strings.ToLower(t.Name)] || excludeSchema[strings.ToLower(t.Schema)] {
+			continue
+		}
+		filteredTables = append(filteredTables, t)
+	}
+
+	var filteredIndexes []postgres.IndexInfo
+	for _, idx := range snap.Indexes {
+		if excludeTable[strings.ToLower(idx.Table)] || excludeSchema[strings.ToLower(idx.Schema)] {
+			continue
+		}
+		filteredIndexes = append(filteredIndexes, idx)
+	}
+
 	var findings []Finding
 
-	findings = append(findings, detectUnusedTables(snap.Stats)...)
-	findings = append(findings, detectUnusedIndexes(snap.Indexes)...)
-	findings = append(findings, detectBloatedIndexes(snap.Indexes, tableSizeMap)...)
-	findings = append(findings, detectMissingVacuum(snap.Stats, time.Now())...)
-	findings = append(findings, detectNoPrimaryKey(snap.Tables, pkSet)...)
-	findings = append(findings, detectDuplicateIndexes(snap.Indexes)...)
+	findings = append(findings, detectUnusedTables(filteredStats)...)
+	findings = append(findings, detectUnusedIndexes(filteredIndexes)...)
+	findings = append(findings, detectBloatedIndexes(filteredIndexes, tableSizeMap, bloatMin)...)
+	findings = append(findings, detectMissingVacuum(filteredStats, time.Now(), vacuumThreshold)...)
+	findings = append(findings, detectNoPrimaryKey(filteredTables, pkSet)...)
+	findings = append(findings, detectDuplicateIndexes(filteredIndexes)...)
 
 	return findings
 }
@@ -83,7 +118,7 @@ func detectUnusedIndexes(indexes []postgres.IndexInfo) []Finding {
 	return findings
 }
 
-func detectBloatedIndexes(indexes []postgres.IndexInfo, tableSizeMap map[string]int64) []Finding {
+func detectBloatedIndexes(indexes []postgres.IndexInfo, tableSizeMap map[string]int64, bloatMin int64) []Finding {
 	// Group total index size by table
 	tableIndexSize := make(map[string]int64)
 	for _, idx := range indexes {
@@ -105,7 +140,7 @@ func detectBloatedIndexes(indexes []postgres.IndexInfo, tableSizeMap map[string]
 			// and the index has zero scans (already caught by unused, but bloat is about size)
 			// More useful: flag if index size exceeds a reasonable multiple of estimated rows
 			// For now: flag if index has 0 scans and is > 1MB
-			if idx.IndexScans == 0 && idx.SizeBytes > 1024*1024 {
+			if idx.IndexScans == 0 && idx.SizeBytes > bloatMin {
 				findings = append(findings, Finding{
 					Type:     FindingBloatedIndex,
 					Severity: SeverityLow,
@@ -120,7 +155,7 @@ func detectBloatedIndexes(indexes []postgres.IndexInfo, tableSizeMap map[string]
 	return findings
 }
 
-func detectMissingVacuum(stats []postgres.TableStats, now time.Time) []Finding {
+func detectMissingVacuum(stats []postgres.TableStats, now time.Time, threshold time.Duration) []Finding {
 	var findings []Finding
 	for i := range stats {
 		s := &stats[i]
@@ -141,7 +176,7 @@ func detectMissingVacuum(stats []postgres.TableStats, now time.Time) []Finding {
 			continue
 		}
 
-		if now.Sub(*lastVac) > missingVacuumThreshold {
+		if now.Sub(*lastVac) > threshold {
 			findings = append(findings, Finding{
 				Type:     FindingMissingVacuum,
 				Severity: SeverityLow,

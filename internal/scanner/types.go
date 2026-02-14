@@ -31,11 +31,23 @@ type TableRef struct {
 	Context Context     `json:"context"`
 }
 
-// ScanResult holds all table references found in a code repository.
+// ColumnRef is a single reference to a database column found in code.
+type ColumnRef struct {
+	Table   string  `json:"table"`
+	Column  string  `json:"column"`
+	Schema  string  `json:"schema,omitempty"`
+	File    string  `json:"file"`
+	Line    int     `json:"line"`
+	Context Context `json:"context"`
+}
+
+// ScanResult holds all table and column references found in a code repository.
 type ScanResult struct {
-	RepoPath     string     `json:"repoPath"`
-	Refs         []TableRef `json:"refs"`
-	Tables       []string   `json:"tables"`
-	FilesScanned int        `json:"filesScanned"`
-	FilesSkipped int        `json:"filesSkipped,omitempty"`
+	RepoPath     string      `json:"repoPath"`
+	Refs         []TableRef  `json:"refs"`
+	ColumnRefs   []ColumnRef `json:"columnRefs,omitempty"`
+	Tables       []string    `json:"tables"`
+	Columns      []string    `json:"columns,omitempty"`
+	FilesScanned int         `json:"filesScanned"`
+	FilesSkipped int         `json:"filesSkipped,omitempty"`
 }

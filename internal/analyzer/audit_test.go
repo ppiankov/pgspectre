@@ -114,7 +114,7 @@ func TestDetectBloatedIndexes(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			findings := detectBloatedIndexes(tt.indexes, tableSizeMap)
+			findings := detectBloatedIndexes(tt.indexes, tableSizeMap, 1024*1024)
 			if len(findings) != tt.want {
 				t.Errorf("got %d findings, want %d", len(findings), tt.want)
 			}
@@ -148,7 +148,7 @@ func TestDetectMissingVacuum(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			findings := detectMissingVacuum(tt.stats, now)
+			findings := detectMissingVacuum(tt.stats, now, 30*24*time.Hour)
 			if len(findings) != tt.want {
 				t.Errorf("got %d findings, want %d", len(findings), tt.want)
 			}
@@ -242,7 +242,7 @@ func TestAudit_Integration(t *testing.T) {
 		},
 	}
 
-	findings := Audit(snap)
+	findings := Audit(snap, DefaultAuditOptions())
 
 	// Expected: UNUSED_TABLE(logs), UNUSED_INDEX(idx_unused), NO_PRIMARY_KEY(logs)
 	typeCounts := make(map[FindingType]int)

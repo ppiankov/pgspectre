@@ -131,65 +131,58 @@ Create `internal/scanner/` package:
 
 ---
 
-## WO-07: Column-level drift detection
+## WO-07: Column-level drift detection ✅
 
 **Goal:** Extend code scanner and check command to detect column-level drift, not just table-level.
 
-Scanner already extracts table names. This adds column extraction from `SELECT col`, `WHERE col =`, `ORDER BY col`, `INSERT INTO t (col)`, `UPDATE t SET col =` and compares against `information_schema.columns`.
+### Implementation
+- Added `ColumnRef` type and `ScanLineColumns()` to scanner with 5 column extraction patterns: dotted refs, SELECT columns, WHERE/AND/OR conditions, ORDER/GROUP BY, INSERT column lists
+- Added `FindingMissingColumn` finding type (medium severity)
+- Extended `Diff()` to compare column references against `snap.Columns`
+- Rejects false positives: SQL keywords, functions, uppercase method names (e.g., `fmt.Println`)
+- 10 new scanner tests, 3 new analyzer tests
 
-### Detections
-- **MISSING_COLUMN**: code references `users.email` but column doesn't exist
-- **UNUSED_COLUMN**: column exists in DB, never referenced in code
-- **TYPE_MISMATCH**: code casts suggest different type than schema (stretch goal)
-
-### Steps
-1. Extend `internal/scanner/sql_scanner.go` — extract column names with table context
-2. Extend `internal/scanner/orm_scanner.go` — extract field mappings from ORM models
-3. Add `internal/analyzer/column_diff.go` — compare code columns vs `information_schema.columns`
-4. Integrate into `check` command output
-
-### Acceptance
-- `pgspectre check` reports column-level drift alongside table-level
-- JSON output includes column findings with file + line references
-- `make test` passes with -race
+### Files
+- `internal/scanner/types.go` — added ColumnRef, extended ScanResult
+- `internal/scanner/patterns.go` — column patterns, ScanLineColumns(), isValidColumnName()
+- `internal/scanner/scanner.go` — wired column scanning, uniqueColumns()
+- `internal/analyzer/types.go` — FindingMissingColumn
+- `internal/analyzer/diff.go` — column drift detection
 
 ---
 
-## WO-08: Config file (.pgspectre.yml)
+## WO-08: Config file (.pgspectre.yml) ✅
 
-**Goal:** Support a config file for custom thresholds, ignore patterns, and schema filters.
+**Goal:** Support a config file for custom thresholds, ignore patterns, and defaults.
 
-Every production use needs to ignore certain tables (migrations, Django admin, audit logs) and tune thresholds (vacuum days, bloat size, scan count).
+### Implementation
+- Created `internal/config/` package following mongospectre pattern
+- YAML config with `go.yaml.in/yaml/v3`: db_url, thresholds, exclude, defaults
+- `Load(dir)` tries `.pgspectre.yml` in CWD, then `~/.pgspectre.yml`, falls back to `DefaultConfig()`
+- Added `AuditOptions` struct to analyzer for threshold/exclusion passthrough
+- `Audit()` and `Diff()` accept `AuditOptions` with configurable vacuum days, bloat threshold, table/schema exclusions
+- CLI loads config in `PersistentPreRunE`, applies db_url/format/timeout defaults
 
 ### Config shape
 ```yaml
+db_url: "postgres://localhost:5432/mydb"
 thresholds:
-  unused_index_min_size: 100MB
-  vacuum_stale_days: 30
-  bloat_ratio: 2.0
-ignore:
-  tables:
-    - django_migrations
-    - django_admin_log
-    - "audit_*"
-  schemas:
-    - pg_catalog
-    - information_schema
-schemas:
-  - public
-  - payments
+  vacuum_days: 14
+  bloat_min_bytes: 2097152
+exclude:
+  tables: [migrations, schema_versions]
+  schemas: [pg_catalog]
+defaults:
+  format: json
+  timeout: "60s"
 ```
 
-### Steps
-1. Create `internal/config/config.go` — YAML parsing, defaults, validation
-2. Create `internal/config/config_test.go`
-3. Add `--config` flag to root command, default lookup: `.pgspectre.yml`, `~/.pgspectre.yml`
-4. Wire thresholds into analyzer, ignore patterns into scanner and inspector
-
-### Acceptance
-- `pgspectre audit --config .pgspectre.yml` respects overrides
-- Missing config file uses sensible defaults (not an error)
-- `make test` passes with -race
+### Files
+- `internal/config/config.go` — Config, Load(), DefaultConfig(), TimeoutDuration()
+- `internal/config/config_test.go` — 100% coverage
+- `internal/analyzer/types.go` — AuditOptions, DefaultAuditOptions()
+- `internal/analyzer/audit.go` — configurable thresholds and exclusions
+- `internal/cli/root.go` — config loading, auditOptsFromConfig()
 
 ---
 
