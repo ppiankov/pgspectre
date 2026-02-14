@@ -1,4 +1,4 @@
-.PHONY: all build clean test fmt vet lint deps dev install help
+.PHONY: all build clean test test-integration fmt vet lint deps dev install coverage coverage-html help
 
 BINARY_NAME = pgspectre
 BIN_DIR     = bin
@@ -30,6 +30,20 @@ clean:
 test:
 	@echo "Running tests..."
 	@go test -v -race -cover ./...
+
+## test-integration: Run integration tests (requires Docker)
+test-integration:
+	@echo "Running integration tests..."
+	@go test -race -tags=integration -count=1 -timeout=120s ./internal/postgres/
+
+## coverage: Run tests with coverage report
+coverage:
+	@go test -race -coverprofile=coverage.out ./...
+	@go tool cover -func=coverage.out
+
+## coverage-html: Open coverage report in browser
+coverage-html: coverage
+	@go tool cover -html=coverage.out
 
 ## fmt: Format code
 fmt:
