@@ -4,16 +4,19 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"time"
 
 	"github.com/ppiankov/pgspectre/internal/analyzer"
+	"github.com/ppiankov/pgspectre/internal/config"
 	"github.com/ppiankov/pgspectre/internal/postgres"
 	"github.com/ppiankov/pgspectre/internal/reporter"
 	"github.com/ppiankov/pgspectre/internal/scanner"
 	"github.com/spf13/cobra"
 )
 
-var dbURL string
+var (
+	dbURL string
+	cfg   config.Config
+)
 
 func newRootCmd(version string) *cobra.Command {
 	root := &cobra.Command{
@@ -21,6 +24,26 @@ func newRootCmd(version string) *cobra.Command {
 		Short:        "PostgreSQL schema and usage auditor",
 		Long:         "Scans codebases for table/column references, compares with live Postgres schema and statistics, detects drift.",
 		SilenceUsage: true,
+		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+			cwd, err := os.Getwd()
+			if err != nil {
+				cwd = "."
+			}
+			cfg, err = config.Load(cwd)
+			if err != nil {
+				return fmt.Errorf("load config: %w", err)
+			}
+
+			// Apply config defaults if flags not explicitly set
+			if dbURL == "" {
+				if envURL := os.Getenv("PGSPECTRE_DB_URL"); envURL != "" {
+					dbURL = envURL
+				} else if cfg.DBURL != "" {
+					dbURL = cfg.DBURL
+				}
+			}
+			return nil
+		},
 	}
 
 	root.PersistentFlags().StringVar(&dbURL, "db-url", "", "PostgreSQL connection URL (or set PGSPECTRE_DB_URL)")
@@ -53,7 +76,13 @@ func newAuditCmd() *cobra.Command {
 				return fmt.Errorf("--db-url is required")
 			}
 
-			ctx, cancel := context.WithTimeout(cmd.Context(), 30*time.Second)
+			// Use config format as default if flag not explicitly set
+			if !cmd.Flags().Changed("format") && cfg.Defaults.Format != "" {
+				format = cfg.Defaults.Format
+			}
+
+			timeout := cfg.TimeoutDuration()
+			ctx, cancel := context.WithTimeout(cmd.Context(), timeout)
 			defer cancel()
 
 			inspector, err := postgres.NewInspector(ctx, postgres.Config{URL: dbURL})
@@ -75,7 +104,7 @@ func newAuditCmd() *cobra.Command {
 			_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Inspected %d tables, %d indexes, %d constraints\n",
 				len(snap.Tables), len(snap.Indexes), len(snap.Constraints))
 
-			findings := analyzer.Audit(snap)
+			findings := analyzer.Audit(snap, auditOptsFromConfig())
 			report := reporter.NewReport("audit", findings)
 
 			if err := reporter.Write(cmd.OutOrStdout(), &report, reporter.Format(format)); err != nil {
@@ -113,6 +142,11 @@ func newCheckCmd() *cobra.Command {
 				return fmt.Errorf("--repo is required")
 			}
 
+			// Use config format as default if flag not explicitly set
+			if !cmd.Flags().Changed("format") && cfg.Defaults.Format != "" {
+				format = cfg.Defaults.Format
+			}
+
 			// Scan code repo (no timeout needed — local filesystem)
 			_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Scanning repo %s...\n", repo)
 			scan, err := scanner.Scan(repo)
@@ -123,7 +157,8 @@ func newCheckCmd() *cobra.Command {
 				len(scan.Refs), scan.FilesScanned)
 
 			// Connect to PostgreSQL
-			ctx, cancel := context.WithTimeout(cmd.Context(), 60*time.Second)
+			timeout := cfg.TimeoutDuration()
+			ctx, cancel := context.WithTimeout(cmd.Context(), timeout)
 			defer cancel()
 
 			inspector, err := postgres.NewInspector(ctx, postgres.Config{URL: dbURL})
@@ -146,7 +181,7 @@ func newCheckCmd() *cobra.Command {
 				len(snap.Tables), len(snap.Indexes), len(snap.Constraints))
 
 			// Run diff analysis
-			findings := analyzer.Diff(&scan, snap)
+			findings := analyzer.Diff(&scan, snap, auditOptsFromConfig())
 			report := reporter.NewReport("check", findings)
 
 			if err := reporter.Write(cmd.OutOrStdout(), &report, reporter.Format(format)); err != nil {
@@ -174,6 +209,15 @@ func newCheckCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&failOnMissing, "fail-on-missing", false, "exit 2 if any MISSING_TABLE found")
 
 	return cmd
+}
+
+func auditOptsFromConfig() analyzer.AuditOptions {
+	return analyzer.AuditOptions{
+		VacuumDays:     cfg.Thresholds.VacuumDays,
+		BloatMinBytes:  cfg.Thresholds.BloatMinBytes,
+		ExcludeTables:  cfg.Exclude.Tables,
+		ExcludeSchemas: cfg.Exclude.Schemas,
+	}
 }
 
 // Execute runs the root command.
