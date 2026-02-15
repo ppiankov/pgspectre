@@ -325,26 +325,18 @@ defaults:
 
 ---
 
-## WO-16: Parallel file scanning
+## WO-16: Parallel file scanning ✅
 
-**Goal:** `filepath.WalkDir` is sequential. Fan out to N goroutines for large repos.
+**Status:** Complete
 
-### Steps
-1. Walk directory tree, collect file paths
-2. Fan out to `runtime.NumCPU()` goroutines via buffered channel
-3. Each goroutine runs `ScanFile()`, sends results to collector
-4. Merge results after all goroutines complete
-5. `--parallel N` flag (default: NumCPU, `--parallel 1` for sequential)
-
-### Files
-- `internal/scanner/parallel.go` — worker pool, path channel, result collector
-- `internal/scanner/parallel_test.go`
-
-### Acceptance
-- Same results as sequential scan (deterministic)
-- Measurable speedup on repos with 1000+ files
-- `make test` passes with -race
-- No data races under `go test -race`
+**Implementation:**
+- Created `internal/scanner/parallel.go` — `ScanParallel(repoPath, workers)` with 3-phase design: collect paths, fan out to N workers via buffered channel, merge results
+- `workers=0` defaults to `runtime.NumCPU()`, `workers=1` delegates to sequential `Scan()`
+- Workers send `fileResult` structs through channel, main goroutine merges after `wg.Wait()`
+- Added `--parallel` flag to both `check` and `scan` commands (default 0 = NumCPU)
+- Both commands now use `ScanParallel()` instead of `Scan()`
+- Created `internal/scanner/parallel_test.go` — 6 tests: SameAsSequential, Workers1, Workers0, EmptyDir, SkipsDirs, ManyFiles (20 files with 4 workers)
+- 155 tests pass with -race, lint clean, scanner coverage 93.4%
 
 ---
 
