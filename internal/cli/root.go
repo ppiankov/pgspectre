@@ -167,6 +167,7 @@ func newCheckCmd() *cobra.Command {
 		failOnMissing  bool
 		baselinePath   string
 		updateBaseline string
+		parallel       int
 	)
 
 	cmd := &cobra.Command{
@@ -187,7 +188,7 @@ func newCheckCmd() *cobra.Command {
 
 			// Scan code repo (no timeout needed — local filesystem)
 			_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Scanning repo %s...\n", repo)
-			scan, err := scanner.Scan(repo)
+			scan, err := scanner.ScanParallel(repo, parallel)
 			if err != nil {
 				return fmt.Errorf("scan repo: %w", err)
 			}
@@ -268,6 +269,7 @@ func newCheckCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&failOnMissing, "fail-on-missing", false, "exit 2 if any MISSING_TABLE found (deprecated, use --fail-on)")
 	cmd.Flags().StringVar(&baselinePath, "baseline", "", "path to baseline file (suppress known findings)")
 	cmd.Flags().StringVar(&updateBaseline, "update-baseline", "", "save current findings as new baseline")
+	cmd.Flags().IntVar(&parallel, "parallel", 0, "number of scanner goroutines (0=NumCPU, 1=sequential)")
 
 	return cmd
 }
