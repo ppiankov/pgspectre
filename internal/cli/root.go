@@ -41,7 +41,11 @@ func newRootCmd(version string) *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("load config: %w", err)
 			}
-			slog.Debug("config loaded", "path", cwd)
+			if !config.Exists(cwd) {
+				slog.Debug("no .pgspectre.yml found, using defaults", "path", cwd)
+			} else {
+				slog.Debug("config loaded", "path", cwd)
+			}
 
 			// Apply config defaults if flags not explicitly set
 			if dbURL == "" {
@@ -126,6 +130,14 @@ func newAuditCmd() *cobra.Command {
 			snap = postgres.FilterSnapshot(snap, schemas)
 			slog.Info("inspected", "tables", len(snap.Tables), "indexes", len(snap.Indexes), "constraints", len(snap.Constraints), "schemas", schemas)
 
+			if len(snap.Tables) == 0 {
+				schemaHint := "public"
+				if len(schemas) > 0 {
+					schemaHint = strings.Join(schemas, ", ")
+				}
+				slog.Warn("no tables found", "schemas", schemaHint)
+			}
+
 			findings := analyzer.Audit(snap, auditOptsFromConfig(schemas))
 			totalBeforeFilter := len(findings)
 
@@ -147,6 +159,11 @@ func newAuditCmd() *cobra.Command {
 			}
 
 			report := reporter.NewReport("audit", findings)
+			report.Scanned = reporter.ScanContext{
+				Tables:  len(snap.Tables),
+				Indexes: len(snap.Indexes),
+				Schemas: countSchemas(snap),
+			}
 			filtered := totalBeforeFilter - len(findings) - totalSuppressed
 			if totalSuppressed > 0 || filtered > 0 {
 				slog.Info("findings filtered",
@@ -249,6 +266,14 @@ func newCheckCmd() *cobra.Command {
 			snap = postgres.FilterSnapshot(snap, schemas)
 			slog.Info("inspected", "tables", len(snap.Tables), "indexes", len(snap.Indexes), "constraints", len(snap.Constraints), "schemas", schemas)
 
+			if len(snap.Tables) == 0 {
+				schemaHint := "public"
+				if len(schemas) > 0 {
+					schemaHint = strings.Join(schemas, ", ")
+				}
+				slog.Warn("no tables found", "schemas", schemaHint)
+			}
+
 			// Run diff analysis
 			findings := analyzer.Diff(&scan, snap, auditOptsFromConfig(schemas))
 			totalBeforeFilter := len(findings)
@@ -271,6 +296,11 @@ func newCheckCmd() *cobra.Command {
 			}
 
 			report := reporter.NewReport("check", findings)
+			report.Scanned = reporter.ScanContext{
+				Tables:  len(snap.Tables),
+				Indexes: len(snap.Indexes),
+				Schemas: countSchemas(snap),
+			}
 			filtered := totalBeforeFilter - len(findings) - totalSuppressed
 			if totalSuppressed > 0 || filtered > 0 {
 				slog.Info("findings filtered",
@@ -435,6 +465,15 @@ func filterByType(findings []analyzer.Finding, typeFilter string) []analyzer.Fin
 		}
 	}
 	return result
+}
+
+// countSchemas returns the number of unique schemas in a snapshot.
+func countSchemas(snap *postgres.Snapshot) int {
+	schemas := make(map[string]bool)
+	for _, t := range snap.Tables {
+		schemas[t.Schema] = true
+	}
+	return len(schemas)
 }
 
 // resolveSchemaFlag parses the --schema flag value and falls back to config.

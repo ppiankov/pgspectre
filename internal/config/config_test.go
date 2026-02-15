@@ -119,6 +119,22 @@ func TestTimeoutDuration(t *testing.T) {
 	}
 }
 
+func TestExists_Found(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, ".pgspectre.yml"), []byte("db_url: test"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if !Exists(dir) {
+		t.Error("Exists() = false, want true")
+	}
+}
+
+func TestExists_NotFound(t *testing.T) {
+	if Exists(t.TempDir()) {
+		t.Error("Exists() = true, want false")
+	}
+}
+
 func TestLoad_PartialOverride(t *testing.T) {
 	dir := t.TempDir()
 	// Only override vacuum_days — other fields should keep defaults
