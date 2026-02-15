@@ -20,6 +20,16 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// ExitError carries a non-zero exit code without calling os.Exit directly.
+// This allows tests to inspect exit codes without terminating the process.
+type ExitError struct {
+	Code int
+}
+
+func (e *ExitError) Error() string {
+	return fmt.Sprintf("exit code %d", e.Code)
+}
+
 // BuildInfo holds version and build metadata.
 type BuildInfo struct {
 	Version   string `json:"version"`
@@ -201,12 +211,12 @@ func newAuditCmd() *cobra.Command {
 			}
 
 			if failOn != "" && shouldFailOn(findings, failOn) {
-				os.Exit(2)
+				return &ExitError{Code: 2}
 			}
 
 			code := analyzer.ExitCode(report.MaxSeverity)
 			if code != 0 {
-				os.Exit(code)
+				return &ExitError{Code: code}
 			}
 			return nil
 		},
@@ -343,12 +353,12 @@ func newCheckCmd() *cobra.Command {
 				effectiveFailOn = "MISSING_TABLE"
 			}
 			if effectiveFailOn != "" && shouldFailOn(findings, effectiveFailOn) {
-				os.Exit(2)
+				return &ExitError{Code: 2}
 			}
 
 			code := analyzer.ExitCode(report.MaxSeverity)
 			if code != 0 {
-				os.Exit(code)
+				return &ExitError{Code: code}
 			}
 			return nil
 		},
