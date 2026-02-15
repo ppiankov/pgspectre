@@ -2,6 +2,7 @@ package analyzer
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -89,12 +90,23 @@ func detectUnusedTables(stats []postgres.TableStats) []Finding {
 	for i := range stats {
 		s := &stats[i]
 		if s.SeqScan == 0 && s.IdxScan == 0 {
+			detail := map[string]string{
+				"live_tuples": strconv.FormatInt(s.LiveTuples, 10),
+				"dead_tuples": strconv.FormatInt(s.DeadTuples, 10),
+			}
+			if s.LastVacuum != nil {
+				detail["last_vacuum"] = s.LastVacuum.Format(time.RFC3339)
+			}
+			if s.LastAutovacuum != nil {
+				detail["last_autovacuum"] = s.LastAutovacuum.Format(time.RFC3339)
+			}
 			findings = append(findings, Finding{
 				Type:     FindingUnusedTable,
 				Severity: SeverityHigh,
 				Schema:   s.Schema,
 				Table:    s.Name,
 				Message:  "table has no sequential or index scans",
+				Detail:   detail,
 			})
 		}
 	}
@@ -111,7 +123,12 @@ func detectUnusedIndexes(indexes []postgres.IndexInfo) []Finding {
 				Schema:   idx.Schema,
 				Table:    idx.Table,
 				Index:    idx.Name,
-				Message:  fmt.Sprintf("index %q has never been used (%d bytes)", idx.Name, idx.SizeBytes),
+				Message:  fmt.Sprintf("index %q has never been used (%s)", idx.Name, formatBytes(idx.SizeBytes)),
+				Detail: map[string]string{
+					"size_bytes": strconv.FormatInt(idx.SizeBytes, 10),
+					"size":       formatBytes(idx.SizeBytes),
+					"idx_scan":   strconv.FormatInt(idx.IndexScans, 10),
+				},
 			})
 		}
 	}
@@ -148,6 +165,10 @@ func detectBloatedIndexes(indexes []postgres.IndexInfo, tableSizeMap map[string]
 					Table:    idx.Table,
 					Index:    idx.Name,
 					Message:  fmt.Sprintf("unused index %q is %s", idx.Name, formatBytes(idx.SizeBytes)),
+					Detail: map[string]string{
+						"index_size_bytes": strconv.FormatInt(idx.SizeBytes, 10),
+						"index_size":       formatBytes(idx.SizeBytes),
+					},
 				})
 			}
 		}
@@ -164,6 +185,14 @@ func detectMissingVacuum(stats []postgres.TableStats, now time.Time, threshold t
 			continue
 		}
 
+		detail := map[string]string{
+			"dead_tuples": strconv.FormatInt(s.DeadTuples, 10),
+			"live_tuples": strconv.FormatInt(s.LiveTuples, 10),
+		}
+		if s.LastAutovacuum != nil {
+			detail["last_autovacuum"] = s.LastAutovacuum.Format(time.RFC3339)
+		}
+
 		lastVac := latestVacuum(s)
 		if lastVac == nil {
 			findings = append(findings, Finding{
@@ -172,17 +201,20 @@ func detectMissingVacuum(stats []postgres.TableStats, now time.Time, threshold t
 				Schema:   s.Schema,
 				Table:    s.Name,
 				Message:  "active table has never been vacuumed",
+				Detail:   detail,
 			})
 			continue
 		}
 
 		if now.Sub(*lastVac) > threshold {
+			detail["last_vacuum"] = lastVac.Format(time.RFC3339)
 			findings = append(findings, Finding{
 				Type:     FindingMissingVacuum,
 				Severity: SeverityLow,
 				Schema:   s.Schema,
 				Table:    s.Name,
 				Message:  fmt.Sprintf("last vacuum was %d days ago", int(now.Sub(*lastVac).Hours()/24)),
+				Detail:   detail,
 			})
 		}
 	}

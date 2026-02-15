@@ -123,6 +123,33 @@ func TestWriteSARIF_ColumnInFQN(t *testing.T) {
 	}
 }
 
+func TestWriteSARIF_WithDetails(t *testing.T) {
+	findings := []analyzer.Finding{
+		{
+			Type: analyzer.FindingUnusedIndex, Severity: analyzer.SeverityMedium,
+			Schema: "public", Table: "users", Index: "idx_old",
+			Message: "index never used",
+			Detail:  map[string]string{"size": "2.0 MB", "idx_scan": "0"},
+		},
+	}
+	report := NewReport("audit", findings)
+	var buf bytes.Buffer
+	if err := Write(&buf, &report, FormatSARIF); err != nil {
+		t.Fatal(err)
+	}
+
+	var log sarifLog
+	if err := json.Unmarshal(buf.Bytes(), &log); err != nil {
+		t.Fatalf("invalid SARIF JSON: %v", err)
+	}
+
+	msg := log.Runs[0].Results[0].Message.Text
+	// Details should be appended to message in sorted key order
+	if msg != "index never used [idx_scan=0] [size=2.0 MB]" {
+		t.Errorf("message = %q, want details appended", msg)
+	}
+}
+
 func TestWriteSARIF_SeverityMapping(t *testing.T) {
 	tests := []struct {
 		severity analyzer.Severity

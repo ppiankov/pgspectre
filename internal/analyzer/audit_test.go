@@ -71,6 +71,27 @@ func TestDetectUnusedTables(t *testing.T) {
 	}
 }
 
+func TestDetectUnusedTables_Detail(t *testing.T) {
+	vac := time.Date(2025, 6, 1, 0, 0, 0, 0, time.UTC)
+	stats := []postgres.TableStats{
+		{Schema: "public", Name: "old", SeqScan: 0, IdxScan: 0, LiveTuples: 100, DeadTuples: 5, LastVacuum: &vac},
+	}
+	findings := detectUnusedTables(stats)
+	if len(findings) != 1 {
+		t.Fatalf("expected 1 finding, got %d", len(findings))
+	}
+	d := findings[0].Detail
+	if d["live_tuples"] != "100" {
+		t.Errorf("live_tuples = %q, want 100", d["live_tuples"])
+	}
+	if d["dead_tuples"] != "5" {
+		t.Errorf("dead_tuples = %q, want 5", d["dead_tuples"])
+	}
+	if d["last_vacuum"] != "2025-06-01T00:00:00Z" {
+		t.Errorf("last_vacuum = %q", d["last_vacuum"])
+	}
+}
+
 func TestDetectUnusedIndexes(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -95,6 +116,26 @@ func TestDetectUnusedIndexes(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestDetectUnusedIndexes_Detail(t *testing.T) {
+	indexes := []postgres.IndexInfo{
+		makeIndex("public", "users", "idx_old", "CREATE ...", 8192, 0),
+	}
+	findings := detectUnusedIndexes(indexes)
+	if len(findings) != 1 {
+		t.Fatalf("expected 1 finding, got %d", len(findings))
+	}
+	d := findings[0].Detail
+	if d["size_bytes"] != "8192" {
+		t.Errorf("size_bytes = %q, want 8192", d["size_bytes"])
+	}
+	if d["size"] != "8.0 KB" {
+		t.Errorf("size = %q, want 8.0 KB", d["size"])
+	}
+	if d["idx_scan"] != "0" {
+		t.Errorf("idx_scan = %q, want 0", d["idx_scan"])
 	}
 }
 

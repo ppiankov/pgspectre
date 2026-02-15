@@ -30,13 +30,14 @@ const (
 
 // Finding represents a single audit or check result.
 type Finding struct {
-	Type     FindingType `json:"type"`
-	Severity Severity    `json:"severity"`
-	Schema   string      `json:"schema"`
-	Table    string      `json:"table"`
-	Column   string      `json:"column,omitempty"`
-	Index    string      `json:"index,omitempty"`
-	Message  string      `json:"message"`
+	Type     FindingType       `json:"type"`
+	Severity Severity          `json:"severity"`
+	Schema   string            `json:"schema"`
+	Table    string            `json:"table"`
+	Column   string            `json:"column,omitempty"`
+	Index    string            `json:"index,omitempty"`
+	Message  string            `json:"message"`
+	Detail   map[string]string `json:"detail,omitempty"`
 }
 
 // AuditOptions controls thresholds and exclusions for analysis.

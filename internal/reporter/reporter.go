@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"sort"
 	"time"
 
 	"github.com/ppiankov/pgspectre/internal/analyzer"
@@ -115,6 +116,18 @@ func writeText(w io.Writer, report *Report) error {
 			severityLabel[f.Severity], f.Type, f.Message, location)
 		if err != nil {
 			return err
+		}
+		if len(f.Detail) > 0 {
+			keys := make([]string, 0, len(f.Detail))
+			for k := range f.Detail {
+				keys = append(keys, k)
+			}
+			sort.Strings(keys)
+			for _, k := range keys {
+				if _, err := fmt.Fprintf(w, "  %s: %s\n", k, f.Detail[k]); err != nil {
+					return err
+				}
+			}
 		}
 	}
 

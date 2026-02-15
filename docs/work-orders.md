@@ -410,7 +410,7 @@ defaults:
 
 ---
 
-## WO-21: Enriched findings
+## WO-21: Enriched findings ✅
 
 **Goal:** "Unused index" is actionable. "Unused index (148MB, 0 scans since last vacuum 3 days ago)" is urgent.
 

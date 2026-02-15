@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"sort"
 
 	"github.com/ppiankov/pgspectre/internal/analyzer"
 )
@@ -118,10 +119,22 @@ func writeSARIF(w io.Writer, report *Report) error {
 			fqn += "." + f.Index
 		}
 
+		msgText := f.Message
+		if len(f.Detail) > 0 {
+			keys := make([]string, 0, len(f.Detail))
+			for k := range f.Detail {
+				keys = append(keys, k)
+			}
+			sort.Strings(keys)
+			for _, k := range keys {
+				msgText += fmt.Sprintf(" [%s=%s]", k, f.Detail[k])
+			}
+		}
+
 		r := sarifResult{
 			RuleID:  "pgspectre/" + string(f.Type),
 			Level:   level,
-			Message: sarifMessage{Text: f.Message},
+			Message: sarifMessage{Text: msgText},
 			Locations: []sarifLocation{
 				{
 					LogicalLocations: []sarifLogicalLocation{
