@@ -82,6 +82,8 @@ func newAuditCmd() *cobra.Command {
 		failOn         string
 		baselinePath   string
 		updateBaseline string
+		minSeverity    string
+		typeFilter     string
 	)
 
 	cmd := &cobra.Command{
@@ -120,8 +122,12 @@ func newAuditCmd() *cobra.Command {
 			slog.Info("inspected", "tables", len(snap.Tables), "indexes", len(snap.Indexes), "constraints", len(snap.Constraints))
 
 			findings := analyzer.Audit(snap, auditOptsFromConfig())
+			totalBeforeFilter := len(findings)
 
-			// Save baseline before filtering
+			// Apply report filters (severity, type)
+			findings = applyReportFilters(findings, minSeverity, typeFilter)
+
+			// Save baseline before baseline/suppress filtering
 			if updateBaseline != "" {
 				if err := baseline.Save(updateBaseline, findings); err != nil {
 					return fmt.Errorf("save baseline: %w", err)
@@ -136,8 +142,13 @@ func newAuditCmd() *cobra.Command {
 			}
 
 			report := reporter.NewReport("audit", findings)
-			if totalSuppressed > 0 {
-				slog.Info("findings filtered", "total", report.Summary.Total+totalSuppressed, "suppressed", totalSuppressed)
+			filtered := totalBeforeFilter - len(findings) - totalSuppressed
+			if totalSuppressed > 0 || filtered > 0 {
+				slog.Info("findings filtered",
+					"showing", len(findings),
+					"total", totalBeforeFilter,
+					"suppressed", totalSuppressed,
+					"filtered", filtered)
 			}
 
 			if err := reporter.Write(cmd.OutOrStdout(), &report, reporter.Format(format)); err != nil {
@@ -158,6 +169,8 @@ func newAuditCmd() *cobra.Command {
 
 	cmd.Flags().StringVar(&format, "format", "text", "output format: text, json, or sarif")
 	cmd.Flags().StringVar(&failOn, "fail-on", "", "exit 2 if findings match (comma-separated types or severity: high,medium)")
+	cmd.Flags().StringVar(&minSeverity, "min-severity", "", "show only findings at or above this severity (high, medium, low, info)")
+	cmd.Flags().StringVar(&typeFilter, "type", "", "show only these finding types (comma-separated, e.g. UNUSED_INDEX,BLOATED_INDEX)")
 	cmd.Flags().StringVar(&baselinePath, "baseline", "", "path to baseline file (suppress known findings)")
 	cmd.Flags().StringVar(&updateBaseline, "update-baseline", "", "save current findings as new baseline")
 
@@ -170,6 +183,8 @@ func newCheckCmd() *cobra.Command {
 		format         string
 		failOn         string
 		failOnMissing  bool
+		minSeverity    string
+		typeFilter     string
 		baselinePath   string
 		updateBaseline string
 		parallel       int
@@ -224,8 +239,12 @@ func newCheckCmd() *cobra.Command {
 
 			// Run diff analysis
 			findings := analyzer.Diff(&scan, snap, auditOptsFromConfig())
+			totalBeforeFilter := len(findings)
 
-			// Save baseline before filtering
+			// Apply report filters (severity, type)
+			findings = applyReportFilters(findings, minSeverity, typeFilter)
+
+			// Save baseline before baseline/suppress filtering
 			if updateBaseline != "" {
 				if err := baseline.Save(updateBaseline, findings); err != nil {
 					return fmt.Errorf("save baseline: %w", err)
@@ -240,8 +259,13 @@ func newCheckCmd() *cobra.Command {
 			}
 
 			report := reporter.NewReport("check", findings)
-			if totalSuppressed > 0 {
-				slog.Info("findings filtered", "total", report.Summary.Total+totalSuppressed, "suppressed", totalSuppressed)
+			filtered := totalBeforeFilter - len(findings) - totalSuppressed
+			if totalSuppressed > 0 || filtered > 0 {
+				slog.Info("findings filtered",
+					"showing", len(findings),
+					"total", totalBeforeFilter,
+					"suppressed", totalSuppressed,
+					"filtered", filtered)
 			}
 
 			if err := reporter.Write(cmd.OutOrStdout(), &report, reporter.Format(format)); err != nil {
@@ -269,6 +293,8 @@ func newCheckCmd() *cobra.Command {
 	cmd.Flags().StringVar(&format, "format", "text", "output format: text, json, or sarif")
 	cmd.Flags().StringVar(&failOn, "fail-on", "", "exit 2 if findings match (comma-separated types or severity: high,medium)")
 	cmd.Flags().BoolVar(&failOnMissing, "fail-on-missing", false, "exit 2 if any MISSING_TABLE found (deprecated, use --fail-on)")
+	cmd.Flags().StringVar(&minSeverity, "min-severity", "", "show only findings at or above this severity (high, medium, low, info)")
+	cmd.Flags().StringVar(&typeFilter, "type", "", "show only these finding types (comma-separated, e.g. MISSING_TABLE,UNUSED_INDEX)")
 	cmd.Flags().StringVar(&baselinePath, "baseline", "", "path to baseline file (suppress known findings)")
 	cmd.Flags().StringVar(&updateBaseline, "update-baseline", "", "save current findings as new baseline")
 	cmd.Flags().IntVar(&parallel, "parallel", 0, "number of scanner goroutines (0=NumCPU, 1=sequential)")
@@ -339,6 +365,62 @@ func shouldFailOn(findings []analyzer.Finding, failOn string) bool {
 		}
 	}
 	return false
+}
+
+// applyReportFilters applies --min-severity and --type filters to findings.
+func applyReportFilters(findings []analyzer.Finding, minSeverity, typeFilter string) []analyzer.Finding {
+	if minSeverity != "" {
+		findings = filterBySeverity(findings, minSeverity)
+	}
+	if typeFilter != "" {
+		findings = filterByType(findings, typeFilter)
+	}
+	return findings
+}
+
+// filterBySeverity keeps only findings at or above the given severity level.
+func filterBySeverity(findings []analyzer.Finding, minSev string) []analyzer.Finding {
+	threshold, ok := severityOrder[strings.ToLower(minSev)]
+	if !ok {
+		return findings // unknown severity, no filtering
+	}
+
+	var result []analyzer.Finding
+	for _, f := range findings {
+		if severityOrder[string(f.Severity)] >= threshold {
+			result = append(result, f)
+		}
+	}
+	return result
+}
+
+var severityOrder = map[string]int{
+	"info":   0,
+	"low":    1,
+	"medium": 2,
+	"high":   3,
+}
+
+// filterByType keeps only findings matching the given types (comma-separated).
+func filterByType(findings []analyzer.Finding, typeFilter string) []analyzer.Finding {
+	types := make(map[string]bool)
+	for _, t := range strings.Split(typeFilter, ",") {
+		t = strings.TrimSpace(strings.ToUpper(t))
+		if t != "" {
+			types[t] = true
+		}
+	}
+	if len(types) == 0 {
+		return findings
+	}
+
+	var result []analyzer.Finding
+	for _, f := range findings {
+		if types[string(f.Type)] {
+			result = append(result, f)
+		}
+	}
+	return result
 }
 
 func auditOptsFromConfig() analyzer.AuditOptions {
