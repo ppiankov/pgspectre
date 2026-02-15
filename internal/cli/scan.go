@@ -41,7 +41,7 @@ func newScanCmd() *cobra.Command {
 	}
 
 	cmd.Flags().StringVar(&repo, "repo", "", "path to code repository to scan (required)")
-	cmd.Flags().StringVar(&format, "format", "text", "output format: text or json")
+	cmd.Flags().StringVar(&format, "format", "text", "output format: text, json, or sarif")
 
 	return cmd
 }
