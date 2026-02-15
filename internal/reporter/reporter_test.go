@@ -69,14 +69,22 @@ func TestWriteText(t *testing.T) {
 	if !strings.Contains(out, "UNUSED_TABLE") {
 		t.Error("expected UNUSED_TABLE in output")
 	}
-	if !strings.Contains(out, "public.old_data") {
-		t.Error("expected location public.old_data in output")
+	// Table headers (grouped by table)
+	if !strings.Contains(out, "public.old_data\n") {
+		t.Error("expected table header public.old_data")
 	}
-	if !strings.Contains(out, "public.users.idx_old") {
-		t.Error("expected location public.users.idx_old in output")
+	if !strings.Contains(out, "public.users\n") {
+		t.Error("expected table header public.users")
+	}
+	// Index shown in finding line
+	if !strings.Contains(out, "(idx_old)") {
+		t.Error("expected index name in finding line")
 	}
 	if !strings.Contains(out, "Summary: 3 findings") {
 		t.Error("expected summary line in output")
+	}
+	if !strings.Contains(out, "Top types:") {
+		t.Error("expected top types line in output")
 	}
 }
 
@@ -106,17 +114,20 @@ func TestWriteText_WithDetails(t *testing.T) {
 		t.Fatal(err)
 	}
 	out := buf.String()
-	if !strings.Contains(out, "  idx_scan: 0\n") {
-		t.Error("expected detail line 'idx_scan: 0'")
+	// Details are indented 4 spaces under grouped output
+	if !strings.Contains(out, "    idx_scan: 0\n") {
+		t.Errorf("expected detail line 'idx_scan: 0', got:\n%s", out)
 	}
-	if !strings.Contains(out, "  size: 2.0 MB\n") {
-		t.Error("expected detail line 'size: 2.0 MB'")
+	if !strings.Contains(out, "    size: 2.0 MB\n") {
+		t.Errorf("expected detail line 'size: 2.0 MB', got:\n%s", out)
 	}
 }
 
-func TestWriteText_NoDetails(t *testing.T) {
+func TestWriteText_GroupsByTable(t *testing.T) {
 	findings := []analyzer.Finding{
-		{Type: analyzer.FindingNoPrimaryKey, Severity: analyzer.SeverityMedium, Schema: "public", Table: "t", Message: "no PK"},
+		{Type: analyzer.FindingUnusedIndex, Severity: analyzer.SeverityMedium, Schema: "public", Table: "users", Index: "idx_a", Message: "unused"},
+		{Type: analyzer.FindingNoPrimaryKey, Severity: analyzer.SeverityMedium, Schema: "public", Table: "logs", Message: "no PK"},
+		{Type: analyzer.FindingUnusedIndex, Severity: analyzer.SeverityMedium, Schema: "public", Table: "users", Index: "idx_b", Message: "unused"},
 	}
 	r := NewReport("audit", findings)
 	var buf bytes.Buffer
@@ -124,10 +135,54 @@ func TestWriteText_NoDetails(t *testing.T) {
 		t.Fatal(err)
 	}
 	out := buf.String()
-	lines := strings.Split(strings.TrimSpace(out), "\n")
-	// Should be just the finding line + summary line (no detail lines)
-	if len(lines) != 3 { // finding, empty line from \n before Summary, summary
-		t.Errorf("expected 3 lines, got %d: %q", len(lines), out)
+	// "public.users" should appear exactly once as a header
+	count := strings.Count(out, "public.users\n")
+	if count != 1 {
+		t.Errorf("expected public.users header once, got %d times in:\n%s", count, out)
+	}
+}
+
+func TestWriteText_TOC(t *testing.T) {
+	// Create >20 findings to trigger TOC
+	var findings []analyzer.Finding
+	for i := 0; i < 25; i++ {
+		findings = append(findings, analyzer.Finding{
+			Type: analyzer.FindingUnusedTable, Severity: analyzer.SeverityLow,
+			Schema: "public", Table: "t" + strings.Repeat("x", i),
+			Message: "unused",
+		})
+	}
+	r := NewReport("audit", findings)
+	var buf bytes.Buffer
+	if err := Write(&buf, &r, FormatText); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(buf.String(), "Tables with findings:") {
+		t.Error("expected TOC for >20 findings")
+	}
+}
+
+func TestWriteText_NoTOC(t *testing.T) {
+	r := NewReport("audit", testFindings) // 3 findings
+	var buf bytes.Buffer
+	if err := Write(&buf, &r, FormatText); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(buf.String(), "Tables with findings:") {
+		t.Error("did not expect TOC for <=20 findings")
+	}
+}
+
+func TestWriteText_NoColor(t *testing.T) {
+	r := NewReport("audit", testFindings)
+	var buf bytes.Buffer
+	// bytes.Buffer is not a TTY, so color is auto-disabled
+	if err := Write(&buf, &r, FormatText); err != nil {
+		t.Fatal(err)
+	}
+	out := buf.String()
+	if strings.Contains(out, "\033[") {
+		t.Error("expected no ANSI escape codes when writing to buffer")
 	}
 }
 
@@ -169,5 +224,24 @@ func TestWriteJSON(t *testing.T) {
 	}
 	if len(decoded.Findings) != 3 {
 		t.Errorf("findings = %d, want 3", len(decoded.Findings))
+	}
+}
+
+func TestGroupByTable(t *testing.T) {
+	findings := []analyzer.Finding{
+		{Schema: "public", Table: "users"},
+		{Schema: "public", Table: "logs"},
+		{Schema: "public", Table: "users"},
+		{Schema: "app", Table: "orders"},
+	}
+	groups := groupByTable(findings)
+	if len(groups) != 3 {
+		t.Fatalf("expected 3 groups, got %d", len(groups))
+	}
+	if groups[0].key != "public.users" || len(groups[0].findings) != 2 {
+		t.Errorf("group[0] = %v", groups[0])
+	}
+	if groups[1].key != "public.logs" || len(groups[1].findings) != 1 {
+		t.Errorf("group[1] = %v", groups[1])
 	}
 }

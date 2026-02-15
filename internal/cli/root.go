@@ -85,6 +85,7 @@ func newAuditCmd() *cobra.Command {
 		minSeverity    string
 		typeFilter     string
 		schemaFlag     string
+		noColor        bool
 	)
 
 	cmd := &cobra.Command{
@@ -155,7 +156,7 @@ func newAuditCmd() *cobra.Command {
 					"filtered", filtered)
 			}
 
-			if err := reporter.Write(cmd.OutOrStdout(), &report, reporter.Format(format)); err != nil {
+			if err := reporter.Write(cmd.OutOrStdout(), &report, reporter.Format(format), reporter.WriteOptions{NoColor: noColor}); err != nil {
 				return fmt.Errorf("write report: %w", err)
 			}
 
@@ -176,6 +177,7 @@ func newAuditCmd() *cobra.Command {
 	cmd.Flags().StringVar(&minSeverity, "min-severity", "", "show only findings at or above this severity (high, medium, low, info)")
 	cmd.Flags().StringVar(&typeFilter, "type", "", "show only these finding types (comma-separated, e.g. UNUSED_INDEX,BLOATED_INDEX)")
 	cmd.Flags().StringVar(&schemaFlag, "schema", "", "schemas to analyze (comma-separated, or 'all' for all non-system schemas)")
+	cmd.Flags().BoolVar(&noColor, "no-color", false, "disable ANSI color output")
 	cmd.Flags().StringVar(&baselinePath, "baseline", "", "path to baseline file (suppress known findings)")
 	cmd.Flags().StringVar(&updateBaseline, "update-baseline", "", "save current findings as new baseline")
 
@@ -191,6 +193,7 @@ func newCheckCmd() *cobra.Command {
 		minSeverity    string
 		typeFilter     string
 		schemaFlag     string
+		noColor        bool
 		baselinePath   string
 		updateBaseline string
 		parallel       int
@@ -277,7 +280,7 @@ func newCheckCmd() *cobra.Command {
 					"filtered", filtered)
 			}
 
-			if err := reporter.Write(cmd.OutOrStdout(), &report, reporter.Format(format)); err != nil {
+			if err := reporter.Write(cmd.OutOrStdout(), &report, reporter.Format(format), reporter.WriteOptions{NoColor: noColor}); err != nil {
 				return fmt.Errorf("write report: %w", err)
 			}
 
@@ -305,6 +308,7 @@ func newCheckCmd() *cobra.Command {
 	cmd.Flags().StringVar(&minSeverity, "min-severity", "", "show only findings at or above this severity (high, medium, low, info)")
 	cmd.Flags().StringVar(&typeFilter, "type", "", "show only these finding types (comma-separated, e.g. MISSING_TABLE,UNUSED_INDEX)")
 	cmd.Flags().StringVar(&schemaFlag, "schema", "", "schemas to analyze (comma-separated, or 'all' for all non-system schemas)")
+	cmd.Flags().BoolVar(&noColor, "no-color", false, "disable ANSI color output")
 	cmd.Flags().StringVar(&baselinePath, "baseline", "", "path to baseline file (suppress known findings)")
 	cmd.Flags().StringVar(&updateBaseline, "update-baseline", "", "save current findings as new baseline")
 	cmd.Flags().IntVar(&parallel, "parallel", 0, "number of scanner goroutines (0=NumCPU, 1=sequential)")
