@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"github.com/ppiankov/pgspectre/internal/analyzer"
+	"github.com/ppiankov/pgspectre/internal/baseline"
 	"github.com/ppiankov/pgspectre/internal/config"
 	"github.com/ppiankov/pgspectre/internal/postgres"
 	"github.com/ppiankov/pgspectre/internal/reporter"
@@ -67,7 +68,11 @@ func newVersionCmd(version string) *cobra.Command {
 }
 
 func newAuditCmd() *cobra.Command {
-	var format string
+	var (
+		format         string
+		baselinePath   string
+		updateBaseline string
+	)
 
 	cmd := &cobra.Command{
 		Use:   "audit",
@@ -106,7 +111,30 @@ func newAuditCmd() *cobra.Command {
 				len(snap.Tables), len(snap.Indexes), len(snap.Constraints))
 
 			findings := analyzer.Audit(snap, auditOptsFromConfig())
+
+			// Save baseline if requested
+			if updateBaseline != "" {
+				if err := baseline.Save(updateBaseline, findings); err != nil {
+					return fmt.Errorf("save baseline: %w", err)
+				}
+				_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Baseline saved to %s (%d findings)\n", updateBaseline, len(findings))
+			}
+
+			// Apply baseline filtering
+			suppressed := 0
+			if baselinePath != "" {
+				bl, err := baseline.Load(baselinePath)
+				if err != nil {
+					return fmt.Errorf("load baseline: %w", err)
+				}
+				findings, suppressed = bl.Filter(findings)
+			}
+
 			report := reporter.NewReport("audit", findings)
+			if suppressed > 0 {
+				_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "%d findings (%d suppressed by baseline)\n",
+					report.Summary.Total+suppressed, suppressed)
+			}
 
 			if err := reporter.Write(cmd.OutOrStdout(), &report, reporter.Format(format)); err != nil {
 				return fmt.Errorf("write report: %w", err)
@@ -121,15 +149,19 @@ func newAuditCmd() *cobra.Command {
 	}
 
 	cmd.Flags().StringVar(&format, "format", "text", "output format: text or json")
+	cmd.Flags().StringVar(&baselinePath, "baseline", "", "path to baseline file (suppress known findings)")
+	cmd.Flags().StringVar(&updateBaseline, "update-baseline", "", "save current findings as new baseline")
 
 	return cmd
 }
 
 func newCheckCmd() *cobra.Command {
 	var (
-		repo          string
-		format        string
-		failOnMissing bool
+		repo           string
+		format         string
+		failOnMissing  bool
+		baselinePath   string
+		updateBaseline string
 	)
 
 	cmd := &cobra.Command{
@@ -183,7 +215,30 @@ func newCheckCmd() *cobra.Command {
 
 			// Run diff analysis
 			findings := analyzer.Diff(&scan, snap, auditOptsFromConfig())
+
+			// Save baseline if requested
+			if updateBaseline != "" {
+				if err := baseline.Save(updateBaseline, findings); err != nil {
+					return fmt.Errorf("save baseline: %w", err)
+				}
+				_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Baseline saved to %s (%d findings)\n", updateBaseline, len(findings))
+			}
+
+			// Apply baseline filtering
+			suppressed := 0
+			if baselinePath != "" {
+				bl, err := baseline.Load(baselinePath)
+				if err != nil {
+					return fmt.Errorf("load baseline: %w", err)
+				}
+				findings, suppressed = bl.Filter(findings)
+			}
+
 			report := reporter.NewReport("check", findings)
+			if suppressed > 0 {
+				_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "%d findings (%d suppressed by baseline)\n",
+					report.Summary.Total+suppressed, suppressed)
+			}
 
 			if err := reporter.Write(cmd.OutOrStdout(), &report, reporter.Format(format)); err != nil {
 				return fmt.Errorf("write report: %w", err)
@@ -208,6 +263,8 @@ func newCheckCmd() *cobra.Command {
 	cmd.Flags().StringVar(&repo, "repo", "", "path to code repository to scan")
 	cmd.Flags().StringVar(&format, "format", "text", "output format: text or json")
 	cmd.Flags().BoolVar(&failOnMissing, "fail-on-missing", false, "exit 2 if any MISSING_TABLE found")
+	cmd.Flags().StringVar(&baselinePath, "baseline", "", "path to baseline file (suppress known findings)")
+	cmd.Flags().StringVar(&updateBaseline, "update-baseline", "", "save current findings as new baseline")
 
 	return cmd
 }

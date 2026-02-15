@@ -224,28 +224,25 @@ defaults:
 
 ---
 
-## WO-11: Baseline mode
+## WO-11: Baseline mode ✅
 
 **Goal:** First run produces N findings. Team triages. Next run flags only new findings. Without this, tool is noisy on day 1 and disabled on day 2.
 
-### Steps
-1. Create `internal/baseline/baseline.go` — `Baseline` struct with finding fingerprints
-2. Fingerprint: hash of (finding type + schema + table + column + index)
-3. `pgspectre check --baseline .pgspectre-baseline.json` reads baseline, suppresses known findings
-4. `pgspectre check --update-baseline .pgspectre-baseline.json` writes current findings as new baseline
-5. Reporter shows "N findings (M suppressed by baseline)" in summary
-6. `--baseline` works with both `audit` and `check` commands
+### Implementation
+- Created `internal/baseline/baseline.go` — SHA-256 fingerprints from `type|schema|table|column|index`
+- `Load()` reads baseline file (returns empty baseline if missing), `Save()` deduplicates and sorts
+- `Filter()` removes baselined findings, returns filtered list and suppressed count
+- `--baseline` and `--update-baseline` flags on both `audit` and `check` commands
+- Suppressed count printed to stderr when baseline active
+- Added `Column` field to `Finding` struct for proper MISSING_COLUMN fingerprinting
+- 9 tests at 94.9% coverage
 
 ### Files
-- `internal/baseline/baseline.go` — Load(), Save(), Contains(), fingerprint logic
-- `internal/baseline/baseline_test.go`
-- `internal/cli/audit.go`, `internal/cli/check.go` — wire `--baseline`, `--update-baseline` flags
-
-### Acceptance
-- First run with `--update-baseline` saves findings
-- Second run with `--baseline` suppresses previously seen findings
-- New findings still reported
-- `make test` passes with -race
+- `internal/baseline/baseline.go` — Load(), Save(), Contains(), Filter(), Fingerprint()
+- `internal/baseline/baseline_test.go` — 9 tests
+- `internal/analyzer/types.go` — added Column field to Finding
+- `internal/analyzer/diff.go` — set Column on MISSING_COLUMN findings
+- `internal/cli/root.go` — wired --baseline and --update-baseline flags
 
 ---
 

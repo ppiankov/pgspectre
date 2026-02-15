@@ -33,6 +33,7 @@ type Finding struct {
 	Severity Severity    `json:"severity"`
 	Schema   string      `json:"schema"`
 	Table    string      `json:"table"`
+	Column   string      `json:"column,omitempty"`
 	Index    string      `json:"index,omitempty"`
 	Message  string      `json:"message"`
 }

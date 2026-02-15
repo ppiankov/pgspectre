@@ -81,6 +81,7 @@ func Diff(scan *scanner.ScanResult, snap *postgres.Snapshot, opts AuditOptions) 
 				Severity: SeverityMedium,
 				Schema:   dbTables[tableLower].Schema,
 				Table:    cr.Table,
+				Column:   cr.Column,
 				Message:  fmt.Sprintf("column %q referenced in code but does not exist in table %q", cr.Column, cr.Table),
 			})
 		}
