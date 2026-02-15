@@ -99,6 +99,25 @@ func TestWriteText_Empty(t *testing.T) {
 	}
 }
 
+func TestWriteText_EmptyWithScanContext(t *testing.T) {
+	r := NewReport("audit", nil)
+	r.Scanned = ScanContext{Tables: 42, Indexes: 15, Schemas: 2}
+	var buf bytes.Buffer
+	if err := Write(&buf, &r, FormatText); err != nil {
+		t.Fatal(err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "No issues detected") {
+		t.Errorf("expected 'No issues detected' in output, got %q", out)
+	}
+	if !strings.Contains(out, "42 tables") {
+		t.Errorf("expected '42 tables' in output, got %q", out)
+	}
+	if !strings.Contains(out, "15 indexes") {
+		t.Errorf("expected '15 indexes' in output, got %q", out)
+	}
+}
+
 func TestWriteText_WithDetails(t *testing.T) {
 	findings := []analyzer.Finding{
 		{

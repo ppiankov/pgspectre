@@ -35,12 +35,20 @@ type Summary struct {
 	Info   int `json:"info"`
 }
 
+// ScanContext holds context about what was scanned.
+type ScanContext struct {
+	Tables  int `json:"tables"`
+	Indexes int `json:"indexes"`
+	Schemas int `json:"schemas"`
+}
+
 // Report is the top-level audit/check output.
 type Report struct {
 	Metadata    Metadata           `json:"metadata"`
 	Findings    []analyzer.Finding `json:"findings"`
 	MaxSeverity analyzer.Severity  `json:"maxSeverity"`
 	Summary     Summary            `json:"summary"`
+	Scanned     ScanContext        `json:"scanned,omitempty"`
 }
 
 // NewReport builds a report from findings.
@@ -119,6 +127,11 @@ type tableGroup struct {
 
 func writeText(w io.Writer, report *Report, useColor bool) error {
 	if report.Summary.Total == 0 {
+		if report.Scanned.Tables > 0 {
+			_, err := fmt.Fprintf(w, "No issues detected. %d tables, %d indexes scanned.\n",
+				report.Scanned.Tables, report.Scanned.Indexes)
+			return err
+		}
 		_, err := fmt.Fprintln(w, "No findings.")
 		return err
 	}

@@ -50,6 +50,20 @@ func DefaultConfig() Config {
 	}
 }
 
+// Exists returns true if a .pgspectre.yml file is found in dir or ~/.
+func Exists(dir string) bool {
+	paths := []string{filepath.Join(dir, ".pgspectre.yml")}
+	if home, err := os.UserHomeDir(); err == nil {
+		paths = append(paths, filepath.Join(home, ".pgspectre.yml"))
+	}
+	for _, p := range paths {
+		if _, err := os.Stat(p); err == nil {
+			return true
+		}
+	}
+	return false
+}
+
 // Load reads configuration from .pgspectre.yml in the given directory,
 // falling back to ~/.pgspectre.yml. Returns DefaultConfig if no file found.
 func Load(dir string) (Config, error) {
