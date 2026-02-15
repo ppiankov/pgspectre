@@ -2,9 +2,11 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"os"
+	"runtime"
 	"strings"
 
 	"github.com/ppiankov/pgspectre/internal/analyzer"
@@ -18,13 +20,21 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// BuildInfo holds version and build metadata.
+type BuildInfo struct {
+	Version   string `json:"version"`
+	Commit    string `json:"commit"`
+	Date      string `json:"date"`
+	GoVersion string `json:"goVersion"`
+}
+
 var (
 	dbURL   string
 	verbose bool
 	cfg     config.Config
 )
 
-func newRootCmd(version string) *cobra.Command {
+func newRootCmd(info BuildInfo) *cobra.Command {
 	root := &cobra.Command{
 		Use:          "pgspectre",
 		Short:        "PostgreSQL schema and usage auditor",
@@ -62,7 +72,7 @@ func newRootCmd(version string) *cobra.Command {
 	root.PersistentFlags().StringVar(&dbURL, "db-url", "", "PostgreSQL connection URL (or set PGSPECTRE_DB_URL)")
 	root.PersistentFlags().BoolVar(&verbose, "verbose", false, "enable debug-level logging")
 
-	root.AddCommand(newVersionCmd(version))
+	root.AddCommand(newVersionCmd(info))
 	root.AddCommand(newAuditCmd())
 	root.AddCommand(newCheckCmd())
 	root.AddCommand(newScanCmd())
@@ -70,14 +80,27 @@ func newRootCmd(version string) *cobra.Command {
 	return root
 }
 
-func newVersionCmd(version string) *cobra.Command {
-	return &cobra.Command{
+func newVersionCmd(info BuildInfo) *cobra.Command {
+	var jsonOutput bool
+
+	cmd := &cobra.Command{
 		Use:   "version",
 		Short: "Print the version",
 		Run: func(cmd *cobra.Command, args []string) {
-			fmt.Println("pgspectre " + version)
+			if jsonOutput {
+				enc := json.NewEncoder(cmd.OutOrStdout())
+				enc.SetIndent("", "  ")
+				_ = enc.Encode(info)
+			} else {
+				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "pgspectre %s (commit: %s, built: %s, go: %s)\n",
+					info.Version, info.Commit, info.Date, info.GoVersion)
+			}
 		},
 	}
+
+	cmd.Flags().BoolVar(&jsonOutput, "json", false, "output version as JSON")
+
+	return cmd
 }
 
 func newAuditCmd() *cobra.Command {
@@ -514,6 +537,12 @@ func auditOptsFromConfig(includeSchemas []string) analyzer.AuditOptions {
 }
 
 // Execute runs the root command.
-func Execute(version string) error {
-	return newRootCmd(version).Execute()
+func Execute(v, commit, date string) error {
+	info := BuildInfo{
+		Version:   v,
+		Commit:    commit,
+		Date:      date,
+		GoVersion: runtime.Version(),
+	}
+	return newRootCmd(info).Execute()
 }
