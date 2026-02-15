@@ -1,0 +1,28 @@
+# pgspectre suppression rules
+# Place as .pgspectre-ignore.yml in your project root
+
+# Suppress findings for specific tables or patterns.
+# Each rule matches findings by table name (supports glob patterns)
+# and optionally by finding type.
+
+rules:
+  # Migration tracking tables — always unused by application queries
+  - table: schema_migrations
+  - table: django_migrations
+  - table: alembic_version
+  - table: flyway_schema_history
+  - table: ar_internal_metadata
+
+  # Suppress all findings for tables matching a glob pattern
+  - table: "tmp_*"
+  - table: "_prisma_*"
+
+  # Suppress specific finding types for certain tables
+  - table: event_log
+    type: NO_PRIMARY_KEY
+  - table: audit_trail
+    type: MISSING_VACUUM
+
+  # PostgreSQL extension tables (if any leak through)
+  - table: "pg_stat_*"
+    type: UNUSED_TABLE

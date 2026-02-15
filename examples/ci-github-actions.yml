@@ -1,0 +1,70 @@
+# Example GitHub Actions workflow using pgspectre
+# Add this as a job in your CI pipeline to detect schema drift
+
+name: Schema Audit
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  pgspectre:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: testdb
+          POSTGRES_USER: pgspectre
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install pgspectre
+        run: go install github.com/ppiankov/pgspectre/cmd/pgspectre@latest
+
+      # Apply your migrations first so the database has your schema
+      # - name: Run migrations
+      #   run: your-migration-tool migrate
+      #   env:
+      #     DATABASE_URL: ${{ env.DB_URL }}
+
+      # Audit: cluster-only analysis (no code scanning)
+      - name: Audit database
+        env:
+          DB_URL: postgres://pgspectre@localhost:5432/testdb?sslmode=disable
+        run: >
+          pgspectre audit
+          --db-url "$DB_URL"
+          --format sarif
+          --min-severity medium
+          > pgspectre-audit.sarif
+
+      # Check: compare code references against live schema
+      - name: Check schema drift
+        env:
+          DB_URL: postgres://pgspectre@localhost:5432/testdb?sslmode=disable
+        run: >
+          pgspectre check
+          --db-url "$DB_URL"
+          --repo .
+          --fail-on MISSING_TABLE,MISSING_COLUMN
+          --format text
+
+      # Upload SARIF for GitHub Security tab (optional)
+      - name: Upload SARIF
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: pgspectre-audit.sarif
+          category: pgspectre

@@ -452,7 +452,7 @@ defaults:
 
 ---
 
-## WO-23: Example configs and CONTRIBUTING.md
+## WO-23: Example configs and CONTRIBUTING.md ✅
 
 **Goal:** New users need a starting point. Contributors need build/test/PR conventions.
 
