@@ -27,7 +27,7 @@ func TestScanCmd_Text(t *testing.T) {
 	writeTestFile(t, dir, "app.go", `package main
 func main() { db.Query("SELECT * FROM users") }`)
 
-	cmd := newRootCmd("test")
+	cmd := newRootCmd(BuildInfo{Version: "test"})
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&bytes.Buffer{})
@@ -50,7 +50,7 @@ func TestScanCmd_JSON(t *testing.T) {
 	dir := t.TempDir()
 	writeTestFile(t, dir, "query.sql", "SELECT name FROM accounts;")
 
-	cmd := newRootCmd("test")
+	cmd := newRootCmd(BuildInfo{Version: "test"})
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&bytes.Buffer{})
@@ -70,7 +70,7 @@ func TestScanCmd_JSON(t *testing.T) {
 }
 
 func TestScanCmd_NoRepo(t *testing.T) {
-	cmd := newRootCmd("test")
+	cmd := newRootCmd(BuildInfo{Version: "test"})
 	cmd.SetOut(&bytes.Buffer{})
 	cmd.SetErr(&bytes.Buffer{})
 	cmd.SetArgs([]string{"scan"})
@@ -83,7 +83,7 @@ func TestScanCmd_NoRepo(t *testing.T) {
 func TestScanCmd_EmptyDir(t *testing.T) {
 	dir := t.TempDir()
 
-	cmd := newRootCmd("test")
+	cmd := newRootCmd(BuildInfo{Version: "test"})
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&bytes.Buffer{})
