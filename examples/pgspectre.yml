@@ -1,0 +1,43 @@
+# pgspectre configuration
+# Place as .pgspectre.yml in your project root or ~/.pgspectre.yml
+
+# Database connection URL (can also use --db-url flag or PGSPECTRE_DB_URL env var)
+# db_url: "set via --db-url flag or PGSPECTRE_DB_URL env var"
+
+# Schemas to analyze (default: all non-system schemas)
+# Use ["all"] or ["*"] to explicitly scan everything
+# schemas:
+#   - public
+#   - app
+#   - reporting
+
+# Detection thresholds
+thresholds:
+  # Days since last vacuum before flagging (default: 30)
+  vacuum_days: 30
+  # Minimum index size in bytes to flag as bloated (default: 1048576 = 1MB)
+  bloat_min_bytes: 1048576
+
+# Exclusions — skip these during analysis
+exclude:
+  # Tables to ignore (exact match, case-insensitive)
+  tables:
+    - schema_migrations
+    - django_migrations
+    - alembic_version
+    - flyway_schema_history
+  # Schemas to ignore (exact match, case-insensitive)
+  schemas:
+    - pg_catalog
+    - information_schema
+  # Finding types to suppress globally
+  # findings:
+  #   - UNUSED_TABLE:public.legacy_*
+  #   - NO_PRIMARY_KEY:public.event_log
+
+# Default flag values
+defaults:
+  # Output format: text, json, or sarif (default: text)
+  format: text
+  # Query timeout (default: 30s)
+  timeout: 30s
