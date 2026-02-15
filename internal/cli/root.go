@@ -11,6 +11,7 @@ import (
 	"github.com/ppiankov/pgspectre/internal/postgres"
 	"github.com/ppiankov/pgspectre/internal/reporter"
 	"github.com/ppiankov/pgspectre/internal/scanner"
+	"github.com/ppiankov/pgspectre/internal/suppress"
 	"github.com/spf13/cobra"
 )
 
@@ -112,7 +113,7 @@ func newAuditCmd() *cobra.Command {
 
 			findings := analyzer.Audit(snap, auditOptsFromConfig())
 
-			// Save baseline if requested
+			// Save baseline before filtering
 			if updateBaseline != "" {
 				if err := baseline.Save(updateBaseline, findings); err != nil {
 					return fmt.Errorf("save baseline: %w", err)
@@ -120,20 +121,16 @@ func newAuditCmd() *cobra.Command {
 				_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Baseline saved to %s (%d findings)\n", updateBaseline, len(findings))
 			}
 
-			// Apply baseline filtering
-			suppressed := 0
-			if baselinePath != "" {
-				bl, err := baseline.Load(baselinePath)
-				if err != nil {
-					return fmt.Errorf("load baseline: %w", err)
-				}
-				findings, suppressed = bl.Filter(findings)
+			// Apply baseline + suppress filters
+			findings, totalSuppressed, err := filterFindings(findings, baselinePath)
+			if err != nil {
+				return err
 			}
 
 			report := reporter.NewReport("audit", findings)
-			if suppressed > 0 {
-				_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "%d findings (%d suppressed by baseline)\n",
-					report.Summary.Total+suppressed, suppressed)
+			if totalSuppressed > 0 {
+				_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "%d findings (%d suppressed)\n",
+					report.Summary.Total+totalSuppressed, totalSuppressed)
 			}
 
 			if err := reporter.Write(cmd.OutOrStdout(), &report, reporter.Format(format)); err != nil {
@@ -216,7 +213,7 @@ func newCheckCmd() *cobra.Command {
 			// Run diff analysis
 			findings := analyzer.Diff(&scan, snap, auditOptsFromConfig())
 
-			// Save baseline if requested
+			// Save baseline before filtering
 			if updateBaseline != "" {
 				if err := baseline.Save(updateBaseline, findings); err != nil {
 					return fmt.Errorf("save baseline: %w", err)
@@ -224,20 +221,16 @@ func newCheckCmd() *cobra.Command {
 				_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Baseline saved to %s (%d findings)\n", updateBaseline, len(findings))
 			}
 
-			// Apply baseline filtering
-			suppressed := 0
-			if baselinePath != "" {
-				bl, err := baseline.Load(baselinePath)
-				if err != nil {
-					return fmt.Errorf("load baseline: %w", err)
-				}
-				findings, suppressed = bl.Filter(findings)
+			// Apply baseline + suppress filters
+			findings, totalSuppressed, err := filterFindings(findings, baselinePath)
+			if err != nil {
+				return err
 			}
 
 			report := reporter.NewReport("check", findings)
-			if suppressed > 0 {
-				_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "%d findings (%d suppressed by baseline)\n",
-					report.Summary.Total+suppressed, suppressed)
+			if totalSuppressed > 0 {
+				_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "%d findings (%d suppressed)\n",
+					report.Summary.Total+totalSuppressed, totalSuppressed)
 			}
 
 			if err := reporter.Write(cmd.OutOrStdout(), &report, reporter.Format(format)); err != nil {
@@ -267,6 +260,39 @@ func newCheckCmd() *cobra.Command {
 	cmd.Flags().StringVar(&updateBaseline, "update-baseline", "", "save current findings as new baseline")
 
 	return cmd
+}
+
+// filterFindings applies baseline and suppression rules to findings.
+func filterFindings(findings []analyzer.Finding, baselinePath string) ([]analyzer.Finding, int, error) {
+	totalSuppressed := 0
+
+	// Apply baseline filtering
+	if baselinePath != "" {
+		bl, err := baseline.Load(baselinePath)
+		if err != nil {
+			return nil, 0, fmt.Errorf("load baseline: %w", err)
+		}
+		var n int
+		findings, n = bl.Filter(findings)
+		totalSuppressed += n
+	}
+
+	// Apply suppress rules (.pgspectre-ignore.yml + config exclude.findings)
+	cwd, err := os.Getwd()
+	if err != nil {
+		cwd = "."
+	}
+	rules, err := suppress.LoadRules(cwd)
+	if err != nil {
+		return nil, 0, fmt.Errorf("load suppress rules: %w", err)
+	}
+	rules.WithConfigFindings(cfg.Exclude.Findings)
+
+	var n int
+	findings, n = rules.Filter(findings)
+	totalSuppressed += n
+
+	return findings, totalSuppressed, nil
 }
 
 func auditOptsFromConfig() analyzer.AuditOptions {

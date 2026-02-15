@@ -266,37 +266,27 @@ defaults:
 
 ---
 
-## WO-13: Finding suppression
+## WO-13: Finding suppression ✅
 
 **Goal:** Teams will have false positives. If they can't silence them, they'll silence the whole tool.
 
-### Mechanisms
-1. Inline: `// pgspectre:ignore` comment on the line with the table/column reference
-2. File-level: `.pgspectre-ignore.yml` with table/finding-type suppressions
-3. Config-level: extend `.pgspectre.yml` `exclude.findings` list
+### Implementation
+- Created `internal/suppress/suppress.go` — three suppression mechanisms:
+  1. Inline `// pgspectre:ignore` comment marks refs as suppressed during scanning
+  2. `.pgspectre-ignore.yml` file with table/type glob patterns
+  3. Config-level `exclude.findings` list by finding type
+- Scanner marks `TableRef.Suppressed` and `ColumnRef.Suppressed` on lines with inline ignore
+- CLI `filterFindings()` helper applies baseline + suppress rules to findings
+- Glob patterns: `temp_migration_*` matches `temp_migration_001`, etc.
+- 12 tests at 94.3% coverage
 
-### Ignore file format
-```yaml
-# .pgspectre-ignore.yml
-suppressions:
-  - table: legacy_audit_log
-    reason: "Intentionally unused, retained for compliance"
-  - table: temp_migration_*
-    type: UNUSED_TABLE
-    reason: "Migration tables cleaned up monthly"
-```
-
-### Steps
-1. Create `internal/suppress/suppress.go` — load ignore file, check inline comments
-2. Scanner: detect `pgspectre:ignore` comments and mark refs as suppressed
-3. Analyzer: filter suppressed findings before reporting
-4. Reporter: show "N suppressed" count in summary
-
-### Acceptance
-- Inline `// pgspectre:ignore` suppresses the finding for that line
-- `.pgspectre-ignore.yml` suppressions work with glob patterns
-- Suppressed count shown in summary
-- `make test` passes with -race
+### Files
+- `internal/suppress/suppress.go` — LoadRules(), IsSuppressed(), Filter(), HasInlineIgnore()
+- `internal/suppress/suppress_test.go` — 12 tests
+- `internal/scanner/types.go` — added Suppressed field to TableRef and ColumnRef
+- `internal/scanner/scanner.go` — inline pgspectre:ignore detection
+- `internal/config/config.go` — added Findings to Exclude struct
+- `internal/cli/root.go` — filterFindings() helper, wired suppress into commands
 
 ---
 
