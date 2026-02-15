@@ -432,7 +432,7 @@ defaults:
 
 ---
 
-## WO-22: Schema filter
+## WO-22: Schema filter ✅
 
 **Goal:** Multi-tenant databases with 200+ schemas need `--schema` to scope analysis.
 
