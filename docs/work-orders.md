@@ -520,7 +520,7 @@ defaults:
 
 ---
 
-## WO-26: Homebrew formula
+## WO-26: Homebrew formula ✅
 
 **Goal:** `brew install ppiankov/tap/pgspectre` — one command on macOS/Linux.
 
