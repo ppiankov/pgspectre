@@ -6,10 +6,14 @@ import (
 	"github.com/ppiankov/pgspectre/internal/cli"
 )
 
-var version = "dev"
+var (
+	version = "dev"
+	commit  = "none"
+	date    = "unknown"
+)
 
 func main() {
-	if err := cli.Execute(version); err != nil {
+	if err := cli.Execute(version, commit, date); err != nil {
 		os.Exit(1)
 	}
 }
