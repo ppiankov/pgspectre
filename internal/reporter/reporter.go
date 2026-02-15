@@ -76,15 +76,25 @@ func NewReport(command string, findings []analyzer.Finding) Report {
 	}
 }
 
+// WriteOptions controls text output behavior.
+type WriteOptions struct {
+	NoColor bool
+}
+
 // Write outputs the report in the given format.
-func Write(w io.Writer, report *Report, format Format) error {
+func Write(w io.Writer, report *Report, format Format, opts ...WriteOptions) error {
 	switch format {
 	case FormatJSON:
 		return writeJSON(w, report)
 	case FormatSARIF:
 		return writeSARIF(w, report)
 	default:
-		return writeText(w, report)
+		var opt WriteOptions
+		if len(opts) > 0 {
+			opt = opts[0]
+		}
+		useColor := !opt.NoColor && isTTY(w)
+		return writeText(w, report, useColor)
 	}
 }
 
@@ -101,37 +111,136 @@ var severityLabel = map[analyzer.Severity]string{
 	analyzer.SeverityInfo:   "INFO",
 }
 
-func writeText(w io.Writer, report *Report) error {
+// tableGroup holds findings grouped by schema.table.
+type tableGroup struct {
+	key      string
+	findings []analyzer.Finding
+}
+
+func writeText(w io.Writer, report *Report, useColor bool) error {
 	if report.Summary.Total == 0 {
 		_, err := fmt.Fprintln(w, "No findings.")
 		return err
 	}
 
-	for _, f := range report.Findings {
-		location := f.Schema + "." + f.Table
-		if f.Index != "" {
-			location += "." + f.Index
-		}
-		_, err := fmt.Fprintf(w, "[%s] %s: %s (%s)\n",
-			severityLabel[f.Severity], f.Type, f.Message, location)
-		if err != nil {
+	groups := groupByTable(report.Findings)
+
+	// Table of contents for large reports
+	if report.Summary.Total > 20 {
+		if _, err := fmt.Fprintln(w, "Tables with findings:"); err != nil {
 			return err
 		}
-		if len(f.Detail) > 0 {
-			keys := make([]string, 0, len(f.Detail))
-			for k := range f.Detail {
-				keys = append(keys, k)
+		for _, g := range groups {
+			if _, err := fmt.Fprintf(w, "  %s (%d)\n", g.key, len(g.findings)); err != nil {
+				return err
 			}
-			sort.Strings(keys)
-			for _, k := range keys {
-				if _, err := fmt.Fprintf(w, "  %s: %s\n", k, f.Detail[k]); err != nil {
-					return err
+		}
+		if _, err := fmt.Fprintln(w); err != nil {
+			return err
+		}
+	}
+
+	// Grouped findings
+	for i, g := range groups {
+		if i > 0 {
+			if _, err := fmt.Fprintln(w); err != nil {
+				return err
+			}
+		}
+		header := g.key
+		if useColor {
+			header = colorBold + header + colorReset
+		}
+		if _, err := fmt.Fprintln(w, header); err != nil {
+			return err
+		}
+
+		for _, f := range g.findings {
+			label := severityLabel[f.Severity]
+			if useColor {
+				c := severityColor[f.Severity]
+				label = c + label + colorReset
+			}
+
+			target := string(f.Type)
+			if f.Index != "" {
+				target += " (" + f.Index + ")"
+			}
+
+			if _, err := fmt.Fprintf(w, "  [%s] %s: %s\n", label, target, f.Message); err != nil {
+				return err
+			}
+
+			if len(f.Detail) > 0 {
+				keys := make([]string, 0, len(f.Detail))
+				for k := range f.Detail {
+					keys = append(keys, k)
+				}
+				sort.Strings(keys)
+				for _, k := range keys {
+					if _, err := fmt.Fprintf(w, "    %s: %s\n", k, f.Detail[k]); err != nil {
+						return err
+					}
 				}
 			}
 		}
 	}
 
-	_, err := fmt.Fprintf(w, "\nSummary: %d findings (high=%d medium=%d low=%d info=%d)\n",
-		report.Summary.Total, report.Summary.High, report.Summary.Medium, report.Summary.Low, report.Summary.Info)
+	// Summary
+	if _, err := fmt.Fprintf(w, "\nSummary: %d findings (high=%d medium=%d low=%d info=%d)\n",
+		report.Summary.Total, report.Summary.High, report.Summary.Medium, report.Summary.Low, report.Summary.Info); err != nil {
+		return err
+	}
+
+	// Top finding types
+	typeCounts := make(map[analyzer.FindingType]int)
+	for _, f := range report.Findings {
+		typeCounts[f.Type]++
+	}
+	type typeCount struct {
+		ft    analyzer.FindingType
+		count int
+	}
+	var sorted []typeCount
+	for ft, n := range typeCounts {
+		sorted = append(sorted, typeCount{ft, n})
+	}
+	sort.Slice(sorted, func(i, j int) bool { return sorted[i].count > sorted[j].count })
+	limit := 3
+	if len(sorted) < limit {
+		limit = len(sorted)
+	}
+	if _, err := fmt.Fprint(w, "Top types: "); err != nil {
+		return err
+	}
+	for i := 0; i < limit; i++ {
+		sep := ", "
+		if i == limit-1 {
+			sep = ""
+		}
+		if _, err := fmt.Fprintf(w, "%s (%d)%s", sorted[i].ft, sorted[i].count, sep); err != nil {
+			return err
+		}
+	}
+	_, err := fmt.Fprintln(w)
 	return err
+}
+
+// groupByTable groups findings by schema.table, preserving encounter order.
+func groupByTable(findings []analyzer.Finding) []tableGroup {
+	order := make(map[string]int)
+	var groups []tableGroup
+
+	for _, f := range findings {
+		key := f.Schema + "." + f.Table
+		idx, exists := order[key]
+		if !exists {
+			idx = len(groups)
+			order[key] = idx
+			groups = append(groups, tableGroup{key: key})
+		}
+		groups[idx].findings = append(groups[idx].findings, f)
+	}
+
+	return groups
 }

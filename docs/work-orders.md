@@ -476,7 +476,7 @@ defaults:
 
 ---
 
-## WO-24: Text report formatting
+## WO-24: Text report formatting ✅
 
 **Goal:** Text output is functional but dense. Group findings by table, add severity indicators, improve scannability.
 
