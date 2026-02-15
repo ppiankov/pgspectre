@@ -22,10 +22,11 @@ type Thresholds struct {
 	BloatMinBytes int64 `yaml:"bloat_min_bytes"` // minimum index size to flag as bloated
 }
 
-// Exclude lists tables and schemas to skip during analysis.
+// Exclude lists tables, schemas, and finding types to skip during analysis.
 type Exclude struct {
-	Tables  []string `yaml:"tables"`
-	Schemas []string `yaml:"schemas"`
+	Tables   []string `yaml:"tables"`
+	Schemas  []string `yaml:"schemas"`
+	Findings []string `yaml:"findings"`
 }
 
 // Defaults holds default CLI flag values.
