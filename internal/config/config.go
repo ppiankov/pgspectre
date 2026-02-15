@@ -11,6 +11,7 @@ import (
 // Config holds all pgspectre configuration.
 type Config struct {
 	DBURL      string     `yaml:"db_url"`
+	Schemas    []string   `yaml:"schemas"`
 	Thresholds Thresholds `yaml:"thresholds"`
 	Exclude    Exclude    `yaml:"exclude"`
 	Defaults   Defaults   `yaml:"defaults"`
