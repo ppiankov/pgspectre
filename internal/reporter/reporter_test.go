@@ -91,6 +91,68 @@ func TestWriteText_Empty(t *testing.T) {
 	}
 }
 
+func TestWriteText_WithDetails(t *testing.T) {
+	findings := []analyzer.Finding{
+		{
+			Type: analyzer.FindingUnusedIndex, Severity: analyzer.SeverityMedium,
+			Schema: "public", Table: "users", Index: "idx_old",
+			Message: "index never used",
+			Detail:  map[string]string{"size": "2.0 MB", "idx_scan": "0"},
+		},
+	}
+	r := NewReport("audit", findings)
+	var buf bytes.Buffer
+	if err := Write(&buf, &r, FormatText); err != nil {
+		t.Fatal(err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "  idx_scan: 0\n") {
+		t.Error("expected detail line 'idx_scan: 0'")
+	}
+	if !strings.Contains(out, "  size: 2.0 MB\n") {
+		t.Error("expected detail line 'size: 2.0 MB'")
+	}
+}
+
+func TestWriteText_NoDetails(t *testing.T) {
+	findings := []analyzer.Finding{
+		{Type: analyzer.FindingNoPrimaryKey, Severity: analyzer.SeverityMedium, Schema: "public", Table: "t", Message: "no PK"},
+	}
+	r := NewReport("audit", findings)
+	var buf bytes.Buffer
+	if err := Write(&buf, &r, FormatText); err != nil {
+		t.Fatal(err)
+	}
+	out := buf.String()
+	lines := strings.Split(strings.TrimSpace(out), "\n")
+	// Should be just the finding line + summary line (no detail lines)
+	if len(lines) != 3 { // finding, empty line from \n before Summary, summary
+		t.Errorf("expected 3 lines, got %d: %q", len(lines), out)
+	}
+}
+
+func TestWriteJSON_WithDetails(t *testing.T) {
+	findings := []analyzer.Finding{
+		{
+			Type: analyzer.FindingUnusedTable, Severity: analyzer.SeverityHigh,
+			Schema: "public", Table: "old", Message: "unused",
+			Detail: map[string]string{"live_tuples": "100", "dead_tuples": "50"},
+		},
+	}
+	r := NewReport("audit", findings)
+	var buf bytes.Buffer
+	if err := Write(&buf, &r, FormatJSON); err != nil {
+		t.Fatal(err)
+	}
+	var decoded Report
+	if err := json.Unmarshal(buf.Bytes(), &decoded); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	if decoded.Findings[0].Detail["live_tuples"] != "100" {
+		t.Errorf("expected live_tuples=100, got %q", decoded.Findings[0].Detail["live_tuples"])
+	}
+}
+
 func TestWriteJSON(t *testing.T) {
 	r := NewReport("audit", testFindings)
 	var buf bytes.Buffer
