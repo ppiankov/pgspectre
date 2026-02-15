@@ -12,8 +12,13 @@ type Inspector struct {
 	pool *pgxpool.Pool
 }
 
-// NewInspector connects to PostgreSQL and verifies the connection.
+// NewInspector connects to PostgreSQL with retry on transient errors.
 func NewInspector(ctx context.Context, cfg Config) (*Inspector, error) {
+	return connectWithRetry(ctx, cfg)
+}
+
+// newInspectorOnce connects to PostgreSQL without retry.
+func newInspectorOnce(ctx context.Context, cfg Config) (*Inspector, error) {
 	pool, err := pgxpool.New(ctx, cfg.URL)
 	if err != nil {
 		return nil, fmt.Errorf("connect: %w", err)
