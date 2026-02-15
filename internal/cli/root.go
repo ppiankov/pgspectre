@@ -84,6 +84,7 @@ func newAuditCmd() *cobra.Command {
 		updateBaseline string
 		minSeverity    string
 		typeFilter     string
+		schemaFlag     string
 	)
 
 	cmd := &cobra.Command{
@@ -119,9 +120,12 @@ func newAuditCmd() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("inspect: %w", err)
 			}
-			slog.Info("inspected", "tables", len(snap.Tables), "indexes", len(snap.Indexes), "constraints", len(snap.Constraints))
 
-			findings := analyzer.Audit(snap, auditOptsFromConfig())
+			schemas := resolveSchemaFlag(schemaFlag)
+			snap = postgres.FilterSnapshot(snap, schemas)
+			slog.Info("inspected", "tables", len(snap.Tables), "indexes", len(snap.Indexes), "constraints", len(snap.Constraints), "schemas", schemas)
+
+			findings := analyzer.Audit(snap, auditOptsFromConfig(schemas))
 			totalBeforeFilter := len(findings)
 
 			// Apply report filters (severity, type)
@@ -171,6 +175,7 @@ func newAuditCmd() *cobra.Command {
 	cmd.Flags().StringVar(&failOn, "fail-on", "", "exit 2 if findings match (comma-separated types or severity: high,medium)")
 	cmd.Flags().StringVar(&minSeverity, "min-severity", "", "show only findings at or above this severity (high, medium, low, info)")
 	cmd.Flags().StringVar(&typeFilter, "type", "", "show only these finding types (comma-separated, e.g. UNUSED_INDEX,BLOATED_INDEX)")
+	cmd.Flags().StringVar(&schemaFlag, "schema", "", "schemas to analyze (comma-separated, or 'all' for all non-system schemas)")
 	cmd.Flags().StringVar(&baselinePath, "baseline", "", "path to baseline file (suppress known findings)")
 	cmd.Flags().StringVar(&updateBaseline, "update-baseline", "", "save current findings as new baseline")
 
@@ -185,6 +190,7 @@ func newCheckCmd() *cobra.Command {
 		failOnMissing  bool
 		minSeverity    string
 		typeFilter     string
+		schemaFlag     string
 		baselinePath   string
 		updateBaseline string
 		parallel       int
@@ -235,10 +241,13 @@ func newCheckCmd() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("inspect: %w", err)
 			}
-			slog.Info("inspected", "tables", len(snap.Tables), "indexes", len(snap.Indexes), "constraints", len(snap.Constraints))
+
+			schemas := resolveSchemaFlag(schemaFlag)
+			snap = postgres.FilterSnapshot(snap, schemas)
+			slog.Info("inspected", "tables", len(snap.Tables), "indexes", len(snap.Indexes), "constraints", len(snap.Constraints), "schemas", schemas)
 
 			// Run diff analysis
-			findings := analyzer.Diff(&scan, snap, auditOptsFromConfig())
+			findings := analyzer.Diff(&scan, snap, auditOptsFromConfig(schemas))
 			totalBeforeFilter := len(findings)
 
 			// Apply report filters (severity, type)
@@ -295,6 +304,7 @@ func newCheckCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&failOnMissing, "fail-on-missing", false, "exit 2 if any MISSING_TABLE found (deprecated, use --fail-on)")
 	cmd.Flags().StringVar(&minSeverity, "min-severity", "", "show only findings at or above this severity (high, medium, low, info)")
 	cmd.Flags().StringVar(&typeFilter, "type", "", "show only these finding types (comma-separated, e.g. MISSING_TABLE,UNUSED_INDEX)")
+	cmd.Flags().StringVar(&schemaFlag, "schema", "", "schemas to analyze (comma-separated, or 'all' for all non-system schemas)")
 	cmd.Flags().StringVar(&baselinePath, "baseline", "", "path to baseline file (suppress known findings)")
 	cmd.Flags().StringVar(&updateBaseline, "update-baseline", "", "save current findings as new baseline")
 	cmd.Flags().IntVar(&parallel, "parallel", 0, "number of scanner goroutines (0=NumCPU, 1=sequential)")
@@ -423,12 +433,40 @@ func filterByType(findings []analyzer.Finding, typeFilter string) []analyzer.Fin
 	return result
 }
 
-func auditOptsFromConfig() analyzer.AuditOptions {
+// resolveSchemaFlag parses the --schema flag value and falls back to config.
+func resolveSchemaFlag(flag string) []string {
+	if flag != "" {
+		parts := strings.Split(flag, ",")
+		return postgres.ResolveSchemas(parts)
+	}
+	if len(cfg.Schemas) > 0 {
+		return postgres.ResolveSchemas(cfg.Schemas)
+	}
+	return nil
+}
+
+func auditOptsFromConfig(includeSchemas []string) analyzer.AuditOptions {
+	// Include wins over exclude: remove included schemas from the exclude list
+	excludeSchemas := cfg.Exclude.Schemas
+	if len(includeSchemas) > 0 {
+		includeSet := make(map[string]bool, len(includeSchemas))
+		for _, s := range includeSchemas {
+			includeSet[strings.ToLower(s)] = true
+		}
+		filtered := make([]string, 0, len(excludeSchemas))
+		for _, s := range excludeSchemas {
+			if !includeSet[strings.ToLower(s)] {
+				filtered = append(filtered, s)
+			}
+		}
+		excludeSchemas = filtered
+	}
+
 	return analyzer.AuditOptions{
 		VacuumDays:     cfg.Thresholds.VacuumDays,
 		BloatMinBytes:  cfg.Thresholds.BloatMinBytes,
 		ExcludeTables:  cfg.Exclude.Tables,
-		ExcludeSchemas: cfg.Exclude.Schemas,
+		ExcludeSchemas: excludeSchemas,
 	}
 }
 
