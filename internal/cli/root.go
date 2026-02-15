@@ -3,12 +3,14 @@ package cli
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"strings"
 
 	"github.com/ppiankov/pgspectre/internal/analyzer"
 	"github.com/ppiankov/pgspectre/internal/baseline"
 	"github.com/ppiankov/pgspectre/internal/config"
+	"github.com/ppiankov/pgspectre/internal/logging"
 	"github.com/ppiankov/pgspectre/internal/postgres"
 	"github.com/ppiankov/pgspectre/internal/reporter"
 	"github.com/ppiankov/pgspectre/internal/scanner"
@@ -17,8 +19,9 @@ import (
 )
 
 var (
-	dbURL string
-	cfg   config.Config
+	dbURL   string
+	verbose bool
+	cfg     config.Config
 )
 
 func newRootCmd(version string) *cobra.Command {
@@ -28,6 +31,8 @@ func newRootCmd(version string) *cobra.Command {
 		Long:         "Scans codebases for table/column references, compares with live Postgres schema and statistics, detects drift.",
 		SilenceUsage: true,
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+			logging.Init(verbose, cmd.ErrOrStderr())
+
 			cwd, err := os.Getwd()
 			if err != nil {
 				cwd = "."
@@ -36,6 +41,7 @@ func newRootCmd(version string) *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("load config: %w", err)
 			}
+			slog.Debug("config loaded", "path", cwd)
 
 			// Apply config defaults if flags not explicitly set
 			if dbURL == "" {
@@ -50,6 +56,7 @@ func newRootCmd(version string) *cobra.Command {
 	}
 
 	root.PersistentFlags().StringVar(&dbURL, "db-url", "", "PostgreSQL connection URL (or set PGSPECTRE_DB_URL)")
+	root.PersistentFlags().BoolVar(&verbose, "verbose", false, "enable debug-level logging")
 
 	root.AddCommand(newVersionCmd(version))
 	root.AddCommand(newAuditCmd())
@@ -104,14 +111,13 @@ func newAuditCmd() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("server version: %w", err)
 			}
-			_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Connected to PostgreSQL %s\n", ver)
+			slog.Info("connected", "version", ver)
 
 			snap, err := inspector.Inspect(ctx)
 			if err != nil {
 				return fmt.Errorf("inspect: %w", err)
 			}
-			_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Inspected %d tables, %d indexes, %d constraints\n",
-				len(snap.Tables), len(snap.Indexes), len(snap.Constraints))
+			slog.Info("inspected", "tables", len(snap.Tables), "indexes", len(snap.Indexes), "constraints", len(snap.Constraints))
 
 			findings := analyzer.Audit(snap, auditOptsFromConfig())
 
@@ -120,7 +126,7 @@ func newAuditCmd() *cobra.Command {
 				if err := baseline.Save(updateBaseline, findings); err != nil {
 					return fmt.Errorf("save baseline: %w", err)
 				}
-				_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Baseline saved to %s (%d findings)\n", updateBaseline, len(findings))
+				slog.Info("baseline saved", "path", updateBaseline, "findings", len(findings))
 			}
 
 			// Apply baseline + suppress filters
@@ -131,8 +137,7 @@ func newAuditCmd() *cobra.Command {
 
 			report := reporter.NewReport("audit", findings)
 			if totalSuppressed > 0 {
-				_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "%d findings (%d suppressed)\n",
-					report.Summary.Total+totalSuppressed, totalSuppressed)
+				slog.Info("findings filtered", "total", report.Summary.Total+totalSuppressed, "suppressed", totalSuppressed)
 			}
 
 			if err := reporter.Write(cmd.OutOrStdout(), &report, reporter.Format(format)); err != nil {
@@ -187,13 +192,12 @@ func newCheckCmd() *cobra.Command {
 			}
 
 			// Scan code repo (no timeout needed — local filesystem)
-			_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Scanning repo %s...\n", repo)
+			slog.Debug("scanning repo", "path", repo)
 			scan, err := scanner.ScanParallel(repo, parallel)
 			if err != nil {
 				return fmt.Errorf("scan repo: %w", err)
 			}
-			_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Found %d table references in %d files\n",
-				len(scan.Refs), scan.FilesScanned)
+			slog.Info("scan complete", "refs", len(scan.Refs), "files", scan.FilesScanned)
 
 			// Connect to PostgreSQL
 			timeout := cfg.TimeoutDuration()
@@ -210,14 +214,13 @@ func newCheckCmd() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("server version: %w", err)
 			}
-			_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Connected to PostgreSQL %s\n", ver)
+			slog.Info("connected", "version", ver)
 
 			snap, err := inspector.Inspect(ctx)
 			if err != nil {
 				return fmt.Errorf("inspect: %w", err)
 			}
-			_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Inspected %d tables, %d indexes, %d constraints\n",
-				len(snap.Tables), len(snap.Indexes), len(snap.Constraints))
+			slog.Info("inspected", "tables", len(snap.Tables), "indexes", len(snap.Indexes), "constraints", len(snap.Constraints))
 
 			// Run diff analysis
 			findings := analyzer.Diff(&scan, snap, auditOptsFromConfig())
@@ -227,7 +230,7 @@ func newCheckCmd() *cobra.Command {
 				if err := baseline.Save(updateBaseline, findings); err != nil {
 					return fmt.Errorf("save baseline: %w", err)
 				}
-				_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Baseline saved to %s (%d findings)\n", updateBaseline, len(findings))
+				slog.Info("baseline saved", "path", updateBaseline, "findings", len(findings))
 			}
 
 			// Apply baseline + suppress filters
@@ -238,8 +241,7 @@ func newCheckCmd() *cobra.Command {
 
 			report := reporter.NewReport("check", findings)
 			if totalSuppressed > 0 {
-				_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "%d findings (%d suppressed)\n",
-					report.Summary.Total+totalSuppressed, totalSuppressed)
+				slog.Info("findings filtered", "total", report.Summary.Total+totalSuppressed, "suppressed", totalSuppressed)
 			}
 
 			if err := reporter.Write(cmd.OutOrStdout(), &report, reporter.Format(format)); err != nil {
