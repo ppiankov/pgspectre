@@ -206,25 +206,21 @@ defaults:
 
 ---
 
-## WO-10: `scan` subcommand (offline mode)
+## WO-10: `scan` subcommand (offline mode) ✅
 
 **Goal:** Scan code without a live database connection. Enables CI pre-commit hooks and spectrehub integration.
 
-### Context
-Both `audit` and `check` require `--db-url`. Most CI pipelines don't have DB access. Teams need `pgspectre scan --repo .` to extract table/column references offline.
+### Implementation
+- Created `internal/cli/scan.go` — Cobra `scan` subcommand with `--repo` and `--format text|json` flags
+- Text output: tables list, columns list, references with file:line locations, summary
+- JSON output: marshals `ScanResult` directly (already has JSON tags)
+- Exit code 0 always (no severity without DB comparison)
+- 6 tests in `internal/cli/scan_test.go`: text/JSON output, missing repo error, empty dir, formatters
 
-### Steps
-1. Create `internal/cli/scan.go` — Cobra `scan` subcommand
-2. `--repo` flag (required), `--format text|json` flag
-3. Runs scanner only, outputs `ScanResult` as structured report
-4. Exit code 0 always (no severity without DB comparison)
-5. JSON output compatible with spectrehub ingest contract
-
-### Acceptance
-- `pgspectre scan --repo ./app` produces table/column reference report
-- `--format json` output is machine-parseable
-- Works without `--db-url`
-- `make test` passes with -race
+### Files
+- `internal/cli/scan.go` — newScanCmd(), writeScanResult(), writeScanResultText()
+- `internal/cli/scan_test.go` — 6 tests
+- `internal/cli/root.go` — wired newScanCmd()
 
 ---
 
