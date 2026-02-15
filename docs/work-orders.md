@@ -501,7 +501,7 @@ defaults:
 
 ---
 
-## WO-25: Docker image
+## WO-25: Docker image ✅
 
 **Goal:** `docker run pgspectre audit --db-url ...` — zero install, works in any CI.
 
