@@ -11,8 +11,9 @@ import (
 
 func newScanCmd() *cobra.Command {
 	var (
-		repo   string
-		format string
+		repo     string
+		format   string
+		parallel int
 	)
 
 	cmd := &cobra.Command{
@@ -29,7 +30,7 @@ func newScanCmd() *cobra.Command {
 			}
 
 			_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Scanning %s...\n", repo)
-			result, err := scanner.Scan(repo)
+			result, err := scanner.ScanParallel(repo, parallel)
 			if err != nil {
 				return fmt.Errorf("scan: %w", err)
 			}
@@ -42,6 +43,7 @@ func newScanCmd() *cobra.Command {
 
 	cmd.Flags().StringVar(&repo, "repo", "", "path to code repository to scan (required)")
 	cmd.Flags().StringVar(&format, "format", "text", "output format: text, json, or sarif")
+	cmd.Flags().IntVar(&parallel, "parallel", 0, "number of scanner goroutines (0=NumCPU, 1=sequential)")
 
 	return cmd
 }
