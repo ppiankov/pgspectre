@@ -395,23 +395,18 @@ defaults:
 
 ---
 
-## WO-20: Report filters
+## WO-20: Report filters ✅
 
-**Goal:** Large databases produce hundreds of findings. Teams need `--min-severity` and `--type` filters to focus.
+**Status:** Complete
 
-### Steps
-1. Add `--min-severity high|medium|low|info` flag to `audit` and `check`
-2. Add `--type MISSING_TABLE,UNUSED_INDEX,...` inclusion filter (comma-separated)
-3. `filterBySeverity()` — maps severity string to int, filters findings below threshold
-4. `filterByType()` — inclusion filter, case-insensitive
-5. Filters apply AFTER analysis, BEFORE baseline/suppress, BEFORE reporting
-6. Summary line: "showing N of M findings (filtered by severity >= medium)"
-
-### Acceptance
-- `pgspectre audit --min-severity high` shows only high-severity findings
-- `pgspectre audit --type UNUSED_INDEX,BLOATED_INDEX` shows only those types
-- Filters compose: `--min-severity medium --type MISSING_TABLE` narrows both ways
-- `make test` passes with -race
+**Implementation:**
+- Added `--min-severity` and `--type` flags to both `audit` and `check` commands
+- `filterBySeverity()` — severity threshold with ordinal comparison (info=0, low=1, medium=2, high=3), case-insensitive, unknown severity returns all
+- `filterByType()` — comma-separated type inclusion filter, case-insensitive, empty returns all
+- `applyReportFilters()` — composes both: severity first, then type
+- Filters apply AFTER analysis, BEFORE baseline/suppress — structured slog message shows showing/total/suppressed/filtered counts
+- Created `internal/cli/filter_test.go` — 13 tests: severity levels, case insensitivity, type single/multiple/empty/no-match, composition, no-filters
+- 184 tests pass, lint clean
 
 ---
 
