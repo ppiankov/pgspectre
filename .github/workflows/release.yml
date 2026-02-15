@@ -143,7 +143,7 @@ jobs:
           generate_release_notes: false
 
   homebrew:
-    name: Update Homebrew formula
+    name: Update Homebrew tap
     needs: release
     runs-on: ubuntu-latest
     steps:
@@ -158,9 +158,10 @@ jobs:
 
       - uses: actions/checkout@v4
         with:
-          ref: main
+          repository: ppiankov/homebrew-tap
+          token: ${{ secrets.TAP_GITHUB_TOKEN }}
 
-      - name: Update formula
+      - name: Generate formula
         run: |
           TAG=${{ steps.tag.outputs.version }}
           VNUM=${TAG#v}
@@ -180,20 +181,51 @@ jobs:
           SHA_LINUX_ARM=$(sha256sum "pgspectre_${VNUM}_linux_arm64.tar.gz" | cut -d' ' -f1)
           SHA_LINUX_AMD=$(sha256sum "pgspectre_${VNUM}_linux_amd64.tar.gz" | cut -d' ' -f1)
 
-          sed -i "s|VERSION|${TAG}|g; s|VNUM|${VNUM}|g" Formula/pgspectre.rb
+          mkdir -p Formula
+          cat > Formula/pgspectre.rb << EOF
+          class Pgspectre < Formula
+            desc "PostgreSQL schema and usage auditor — detects drift between code and database"
+            homepage "https://github.com/${REPO}"
+            license "MIT"
 
-          # Replace PLACEHOLDER sha256 values in order of appearance
-          sed -i "0,/PLACEHOLDER/{s/PLACEHOLDER/${SHA_DARWIN_ARM}/}" Formula/pgspectre.rb
-          sed -i "0,/PLACEHOLDER/{s/PLACEHOLDER/${SHA_DARWIN_AMD}/}" Formula/pgspectre.rb
-          sed -i "0,/PLACEHOLDER/{s/PLACEHOLDER/${SHA_LINUX_ARM}/}" Formula/pgspectre.rb
-          sed -i "0,/PLACEHOLDER/{s/PLACEHOLDER/${SHA_LINUX_AMD}/}" Formula/pgspectre.rb
+            on_macos do
+              on_arm do
+                url "${BASE}/pgspectre_${VNUM}_darwin_arm64.tar.gz"
+                sha256 "${SHA_DARWIN_ARM}"
+              end
+              on_intel do
+                url "${BASE}/pgspectre_${VNUM}_darwin_amd64.tar.gz"
+                sha256 "${SHA_DARWIN_AMD}"
+              end
+            end
 
-      - name: Commit formula update
+            on_linux do
+              on_arm do
+                url "${BASE}/pgspectre_${VNUM}_linux_arm64.tar.gz"
+                sha256 "${SHA_LINUX_ARM}"
+              end
+              on_intel do
+                url "${BASE}/pgspectre_${VNUM}_linux_amd64.tar.gz"
+                sha256 "${SHA_LINUX_AMD}"
+              end
+            end
+
+            def install
+              bin.install "pgspectre"
+            end
+
+            test do
+              assert_match "pgspectre", shell_output("#{bin}/pgspectre version")
+            end
+          end
+          EOF
+
+      - name: Commit and push
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add Formula/pgspectre.rb
-          git diff --cached --quiet || git commit -m "chore: update homebrew formula for ${{ steps.tag.outputs.version }}"
+          git diff --cached --quiet || git commit -m "pgspectre ${{ steps.tag.outputs.version }}"
           git push
 
   docker:
