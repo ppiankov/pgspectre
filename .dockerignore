@@ -1,0 +1,10 @@
+bin/
+dist/
+coverage.out
+notes/
+.git/
+.github/
+.claude/
+*.md
+!go.mod
+!go.sum
