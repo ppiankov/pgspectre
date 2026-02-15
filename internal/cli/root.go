@@ -145,7 +145,7 @@ func newAuditCmd() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVar(&format, "format", "text", "output format: text or json")
+	cmd.Flags().StringVar(&format, "format", "text", "output format: text, json, or sarif")
 	cmd.Flags().StringVar(&baselinePath, "baseline", "", "path to baseline file (suppress known findings)")
 	cmd.Flags().StringVar(&updateBaseline, "update-baseline", "", "save current findings as new baseline")
 
@@ -254,7 +254,7 @@ func newCheckCmd() *cobra.Command {
 	}
 
 	cmd.Flags().StringVar(&repo, "repo", "", "path to code repository to scan")
-	cmd.Flags().StringVar(&format, "format", "text", "output format: text or json")
+	cmd.Flags().StringVar(&format, "format", "text", "output format: text, json, or sarif")
 	cmd.Flags().BoolVar(&failOnMissing, "fail-on-missing", false, "exit 2 if any MISSING_TABLE found")
 	cmd.Flags().StringVar(&baselinePath, "baseline", "", "path to baseline file (suppress known findings)")
 	cmd.Flags().StringVar(&updateBaseline, "update-baseline", "", "save current findings as new baseline")

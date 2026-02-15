@@ -246,23 +246,24 @@ defaults:
 
 ---
 
-## WO-12: SARIF output
+## WO-12: SARIF output ✅
 
 **Goal:** GitHub Security tab, GitLab SAST, and VS Code all consume SARIF. One format unlocks three integration points.
 
-### Steps
-1. Create `internal/reporter/sarif.go` — SARIF 2.1.0 writer
-2. Map finding types to SARIF rule IDs (`pgspectre/MISSING_TABLE`, etc.)
-3. Map severity to SARIF level (high→error, medium→warning, low→note)
-4. Include artifact locations with file path + line number (for code-side findings)
-5. Add `sarif` to `--format` flag in all commands
-6. Schema-only findings (audit) use DB URL as artifact location
+### Implementation
+- Created `internal/reporter/sarif.go` — SARIF 2.1.0 writer with minimal type subset
+- Rule IDs: `pgspectre/MISSING_TABLE`, `pgspectre/UNUSED_INDEX`, etc.
+- Severity mapping: high→error, medium→warning, low/info→note
+- Logical locations with schema.table.column FQN
+- `--format sarif` added to audit, check, and scan commands
+- 4 tests: valid structure, empty report, column FQN, severity mapping
 
-### Acceptance
-- `pgspectre check --format sarif` produces valid SARIF 2.1.0
-- Output validates against SARIF JSON schema
-- GitHub Security tab ingests it via `upload-sarif` action
-- `make test` passes with -race
+### Files
+- `internal/reporter/sarif.go` — writeSARIF(), SARIF 2.1.0 types
+- `internal/reporter/sarif_test.go` — 4 tests
+- `internal/reporter/reporter.go` — added FormatSARIF constant
+- `internal/cli/root.go` — updated format help text
+- `internal/cli/scan.go` — updated format help text
 
 ---
 

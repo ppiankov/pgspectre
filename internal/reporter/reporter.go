@@ -13,8 +13,9 @@ import (
 type Format string
 
 const (
-	FormatText Format = "text"
-	FormatJSON Format = "json"
+	FormatText  Format = "text"
+	FormatJSON  Format = "json"
+	FormatSARIF Format = "sarif"
 )
 
 // Metadata holds report context.
@@ -79,6 +80,8 @@ func Write(w io.Writer, report *Report, format Format) error {
 	switch format {
 	case FormatJSON:
 		return writeJSON(w, report)
+	case FormatSARIF:
+		return writeSARIF(w, report)
 	default:
 		return writeText(w, report)
 	}
