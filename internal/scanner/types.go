@@ -23,22 +23,24 @@ const (
 
 // TableRef is a single reference to a database table found in code.
 type TableRef struct {
-	Table   string      `json:"table"`
-	Schema  string      `json:"schema,omitempty"`
-	File    string      `json:"file"`
-	Line    int         `json:"line"`
-	Pattern PatternType `json:"pattern"`
-	Context Context     `json:"context"`
+	Table      string      `json:"table"`
+	Schema     string      `json:"schema,omitempty"`
+	File       string      `json:"file"`
+	Line       int         `json:"line"`
+	Pattern    PatternType `json:"pattern"`
+	Context    Context     `json:"context"`
+	Suppressed bool        `json:"suppressed,omitempty"`
 }
 
 // ColumnRef is a single reference to a database column found in code.
 type ColumnRef struct {
-	Table   string  `json:"table"`
-	Column  string  `json:"column"`
-	Schema  string  `json:"schema,omitempty"`
-	File    string  `json:"file"`
-	Line    int     `json:"line"`
-	Context Context `json:"context"`
+	Table      string  `json:"table"`
+	Column     string  `json:"column"`
+	Schema     string  `json:"schema,omitempty"`
+	File       string  `json:"file"`
+	Line       int     `json:"line"`
+	Context    Context `json:"context"`
+	Suppressed bool    `json:"suppressed,omitempty"`
 }
 
 // ScanResult holds all table and column references found in a code repository.

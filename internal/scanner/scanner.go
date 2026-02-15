@@ -91,25 +91,27 @@ func scanFile(path, relPath string) ([]TableRef, []ColumnRef, error) {
 	var refs []TableRef
 	var colRefs []ColumnRef
 
-	scanText := func(text string, line int) {
+	scanText := func(text string, line int, suppressed bool) {
 		for _, m := range ScanLine(text) {
 			refs = append(refs, TableRef{
-				Table:   m.Table,
-				Schema:  m.Schema,
-				File:    relPath,
-				Line:    line,
-				Pattern: m.Pattern,
-				Context: m.Context,
+				Table:      m.Table,
+				Schema:     m.Schema,
+				File:       relPath,
+				Line:       line,
+				Pattern:    m.Pattern,
+				Context:    m.Context,
+				Suppressed: suppressed,
 			})
 		}
 		for _, cm := range ScanLineColumns(text) {
 			colRefs = append(colRefs, ColumnRef{
-				Table:   cm.Table,
-				Column:  cm.Column,
-				Schema:  cm.Schema,
-				File:    relPath,
-				Line:    line,
-				Context: cm.Context,
+				Table:      cm.Table,
+				Column:     cm.Column,
+				Schema:     cm.Schema,
+				File:       relPath,
+				Line:       line,
+				Context:    cm.Context,
+				Suppressed: suppressed,
 			})
 		}
 	}
@@ -120,31 +122,38 @@ func scanFile(path, relPath string) ([]TableRef, []ColumnRef, error) {
 	if ext == ".sql" {
 		for sc.Scan() {
 			lineNum++
-			for _, s := range buf.feedSQL(lineNum, sc.Text()) {
-				scanText(s.text, s.lineNum)
+			rawLine := sc.Text()
+			ignored := hasInlineIgnore(rawLine)
+			for _, s := range buf.feedSQL(lineNum, rawLine) {
+				scanText(s.text, s.lineNum, ignored)
 			}
 		}
 	} else {
 		for sc.Scan() {
 			lineNum++
 			line := sc.Text()
+			ignored := hasInlineIgnore(line)
 
 			stmt, buffered := buf.feedCode(lineNum, line, ext)
 			if stmt != nil {
-				scanText(stmt.text, stmt.lineNum)
+				scanText(stmt.text, stmt.lineNum, ignored)
 			}
 			if !buffered {
-				scanText(line, lineNum)
+				scanText(line, lineNum, ignored)
 			}
 		}
 	}
 
 	// Flush any remaining buffered content
 	if s := buf.flush(); s != nil {
-		scanText(s.text, s.lineNum)
+		scanText(s.text, s.lineNum, false)
 	}
 
 	return refs, colRefs, sc.Err()
+}
+
+func hasInlineIgnore(line string) bool {
+	return strings.Contains(line, "pgspectre:ignore")
 }
 
 func uniqueColumns(refs []ColumnRef) []string {
