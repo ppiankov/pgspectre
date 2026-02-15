@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/ppiankov/pgspectre/internal/analyzer"
 	"github.com/ppiankov/pgspectre/internal/baseline"
@@ -71,6 +72,7 @@ func newVersionCmd(version string) *cobra.Command {
 func newAuditCmd() *cobra.Command {
 	var (
 		format         string
+		failOn         string
 		baselinePath   string
 		updateBaseline string
 	)
@@ -137,6 +139,10 @@ func newAuditCmd() *cobra.Command {
 				return fmt.Errorf("write report: %w", err)
 			}
 
+			if failOn != "" && shouldFailOn(findings, failOn) {
+				os.Exit(2)
+			}
+
 			code := analyzer.ExitCode(report.MaxSeverity)
 			if code != 0 {
 				os.Exit(code)
@@ -146,6 +152,7 @@ func newAuditCmd() *cobra.Command {
 	}
 
 	cmd.Flags().StringVar(&format, "format", "text", "output format: text, json, or sarif")
+	cmd.Flags().StringVar(&failOn, "fail-on", "", "exit 2 if findings match (comma-separated types or severity: high,medium)")
 	cmd.Flags().StringVar(&baselinePath, "baseline", "", "path to baseline file (suppress known findings)")
 	cmd.Flags().StringVar(&updateBaseline, "update-baseline", "", "save current findings as new baseline")
 
@@ -156,6 +163,7 @@ func newCheckCmd() *cobra.Command {
 	var (
 		repo           string
 		format         string
+		failOn         string
 		failOnMissing  bool
 		baselinePath   string
 		updateBaseline string
@@ -237,12 +245,13 @@ func newCheckCmd() *cobra.Command {
 				return fmt.Errorf("write report: %w", err)
 			}
 
-			if failOnMissing {
-				for _, f := range findings {
-					if f.Type == analyzer.FindingMissingTable {
-						os.Exit(2)
-					}
-				}
+			// --fail-on-missing is an alias for --fail-on MISSING_TABLE
+			effectiveFailOn := failOn
+			if failOnMissing && effectiveFailOn == "" {
+				effectiveFailOn = "MISSING_TABLE"
+			}
+			if effectiveFailOn != "" && shouldFailOn(findings, effectiveFailOn) {
+				os.Exit(2)
 			}
 
 			code := analyzer.ExitCode(report.MaxSeverity)
@@ -255,7 +264,8 @@ func newCheckCmd() *cobra.Command {
 
 	cmd.Flags().StringVar(&repo, "repo", "", "path to code repository to scan")
 	cmd.Flags().StringVar(&format, "format", "text", "output format: text, json, or sarif")
-	cmd.Flags().BoolVar(&failOnMissing, "fail-on-missing", false, "exit 2 if any MISSING_TABLE found")
+	cmd.Flags().StringVar(&failOn, "fail-on", "", "exit 2 if findings match (comma-separated types or severity: high,medium)")
+	cmd.Flags().BoolVar(&failOnMissing, "fail-on-missing", false, "exit 2 if any MISSING_TABLE found (deprecated, use --fail-on)")
 	cmd.Flags().StringVar(&baselinePath, "baseline", "", "path to baseline file (suppress known findings)")
 	cmd.Flags().StringVar(&updateBaseline, "update-baseline", "", "save current findings as new baseline")
 
@@ -293,6 +303,38 @@ func filterFindings(findings []analyzer.Finding, baselinePath string) ([]analyze
 	totalSuppressed += n
 
 	return findings, totalSuppressed, nil
+}
+
+// shouldFailOn returns true if any finding matches the fail-on criteria.
+// Criteria can be finding types (MISSING_TABLE) or severity levels (high, medium).
+func shouldFailOn(findings []analyzer.Finding, failOn string) bool {
+	parts := strings.Split(failOn, ",")
+	types := make(map[string]bool)
+	severities := make(map[string]bool)
+
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			continue
+		}
+		lower := strings.ToLower(p)
+		switch lower {
+		case "high", "medium", "low", "info":
+			severities[lower] = true
+		default:
+			types[strings.ToUpper(p)] = true
+		}
+	}
+
+	for _, f := range findings {
+		if types[string(f.Type)] {
+			return true
+		}
+		if severities[string(f.Severity)] {
+			return true
+		}
+	}
+	return false
 }
 
 func auditOptsFromConfig() analyzer.AuditOptions {
