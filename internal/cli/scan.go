@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 
 	"github.com/ppiankov/pgspectre/internal/scanner"
 	"github.com/spf13/cobra"
@@ -29,13 +30,16 @@ func newScanCmd() *cobra.Command {
 				format = cfg.Defaults.Format
 			}
 
-			_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Scanning %s...\n", repo)
+			slog.Debug("scanning repo", "path", repo)
 			result, err := scanner.ScanParallel(repo, parallel)
 			if err != nil {
 				return fmt.Errorf("scan: %w", err)
 			}
-			_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Scanned %d files (%d skipped), found %d table references, %d column references\n",
-				result.FilesScanned, result.FilesSkipped, len(result.Refs), len(result.ColumnRefs))
+			slog.Info("scan complete",
+				"files", result.FilesScanned,
+				"skipped", result.FilesSkipped,
+				"tables", len(result.Refs),
+				"columns", len(result.ColumnRefs))
 
 			return writeScanResult(cmd.OutOrStdout(), &result, format)
 		},

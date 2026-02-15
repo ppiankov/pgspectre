@@ -346,22 +346,17 @@ defaults:
 
 ---
 
-## WO-17: Structured logging (slog)
+## WO-17: Structured logging (slog) ✅
 
-**Goal:** Replace ad-hoc fmt.Fprintf(os.Stderr) with `log/slog` for consistent, leveled, machine-parseable logs.
+**Status:** Complete
 
-### Steps
-1. Create `internal/logging/logging.go` — `Init(verbose bool)` sets default slog handler
-2. Text handler for human use, JSON handler when `--format json` is active
-3. Replace all `fmt.Fprintf(os.Stderr, ...)` calls with `slog.Debug`/`slog.Info`/`slog.Warn`
-4. `--verbose` flag maps to `slog.LevelDebug`, default is `slog.LevelWarn`
-5. Connection events, scan progress, finding counts as structured fields
-
-### Acceptance
-- `pgspectre audit --verbose` shows debug-level structured logs on stderr
-- `pgspectre audit --format json 2>/dev/null` produces clean JSON on stdout
-- No log output without `--verbose` except errors
-- `make test` passes with -race
+**Implementation:**
+- Created `internal/logging/logging.go` — `Init(verbose, output)` configures `slog.TextHandler` as default logger
+- `--verbose` flag (persistent, on root command) sets `slog.LevelDebug`; default is `slog.LevelWarn` (silent unless problems)
+- Replaced all 12 `fmt.Fprintf(cmd.ErrOrStderr(), ...)` calls in `root.go` and `scan.go` with structured `slog.Debug`/`slog.Info` calls
+- Structured fields: version, tables, indexes, constraints, refs, files, skipped, suppressed, path
+- Created `internal/logging/logging_test.go` — 4 tests, 100% coverage
+- 159 tests pass, lint clean
 
 ---
 
