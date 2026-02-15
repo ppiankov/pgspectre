@@ -34,7 +34,7 @@ test:
 ## test-integration: Run integration tests (requires Docker)
 test-integration:
 	@echo "Running integration tests..."
-	@go test -race -tags=integration -count=1 -timeout=120s ./internal/postgres/
+	@go test -race -tags=integration -count=1 -timeout=120s ./internal/...
 
 ## coverage: Run tests with coverage report
 coverage:
