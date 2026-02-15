@@ -291,21 +291,20 @@ defaults:
 
 ---
 
-## WO-14: `--fail-on` granularity
+## WO-14: `--fail-on` granularity ✅
 
 **Goal:** CI needs `--fail-on MISSING_TABLE,MISSING_COLUMN` not just `--fail-on-missing`.
 
-### Steps
-1. Add `--fail-on` flag accepting comma-separated finding types
-2. Finding types: `MISSING_TABLE`, `MISSING_COLUMN`, `UNUSED_TABLE`, `UNUSED_INDEX`, `BLOATED_INDEX`, `MISSING_VACUUM`, `NO_PRIMARY_KEY`, `DUPLICATE_INDEX`, `SCHEMA_DRIFT`
-3. Exit code 2 if any matching finding exists, regardless of severity
-4. Deprecate `--fail-on-missing` (keep working, alias to `--fail-on MISSING_TABLE`)
-5. `--fail-on high` as shorthand for "any high-severity finding"
+### Implementation
+- Added `--fail-on` flag to both `audit` and `check` commands
+- Accepts comma-separated finding types (MISSING_TABLE,MISSING_COLUMN) or severity levels (high,medium)
+- `shouldFailOn()` helper: case-insensitive matching, distinguishes types from severities
+- `--fail-on-missing` kept as backward-compatible alias (maps to `--fail-on MISSING_TABLE`)
+- 7 tests: by type, by severity, comma-separated, mixed, empty, case-insensitive, no findings
 
-### Acceptance
-- `pgspectre check --fail-on MISSING_TABLE,MISSING_COLUMN` exits 2 on match
-- `--fail-on-missing` still works (backward compatible)
-- `make test` passes with -race
+### Files
+- `internal/cli/root.go` — shouldFailOn(), --fail-on flag on audit and check
+- `internal/cli/failon_test.go` — 7 tests
 
 ---
 
