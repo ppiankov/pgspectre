@@ -186,6 +186,7 @@ jobs:
           class Pgspectre < Formula
             desc "PostgreSQL schema and usage auditor — detects drift between code and database"
             homepage "https://github.com/${REPO}"
+            version "${VNUM}"
             license "MIT"
 
             on_macos do
