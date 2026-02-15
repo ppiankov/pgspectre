@@ -340,6 +340,258 @@ defaults:
 
 ---
 
+---
+
+## Phase 2: Hardening & Usability
+
+---
+
+## WO-17: Structured logging (slog)
+
+**Goal:** Replace ad-hoc fmt.Fprintf(os.Stderr) with `log/slog` for consistent, leveled, machine-parseable logs.
+
+### Steps
+1. Create `internal/logging/logging.go` — `Init(verbose bool)` sets default slog handler
+2. Text handler for human use, JSON handler when `--format json` is active
+3. Replace all `fmt.Fprintf(os.Stderr, ...)` calls with `slog.Debug`/`slog.Info`/`slog.Warn`
+4. `--verbose` flag maps to `slog.LevelDebug`, default is `slog.LevelWarn`
+5. Connection events, scan progress, finding counts as structured fields
+
+### Acceptance
+- `pgspectre audit --verbose` shows debug-level structured logs on stderr
+- `pgspectre audit --format json 2>/dev/null` produces clean JSON on stdout
+- No log output without `--verbose` except errors
+- `make test` passes with -race
+
+---
+
+## WO-18: Connection resilience
+
+**Goal:** Transient network failures should retry, not crash. Permanent failures should fail fast with clear messages.
+
+### Steps
+1. Create `internal/postgres/retry.go` — exponential backoff with jitter (max 3 attempts)
+2. Classify errors: connection refused → retry, auth failed → fail fast, timeout → retry
+3. Wrap `Inspector.Connect()` and catalog queries with retry logic
+4. `--timeout` flag caps total retry window (not per-attempt)
+5. Structured error messages: include host, port, database, error category
+
+### Acceptance
+- Transient connection drop retries up to 3 times with backoff
+- Auth failures fail immediately with clear message
+- `--timeout 5s` caps total retry time
+- No external dependencies (stdlib only)
+- `make test` passes with -race
+
+---
+
+## WO-19: CLI integration tests with PostgreSQL
+
+**Goal:** CLI coverage is 43.2% — everything behind pgx is untested. Use GitHub Actions `services: postgres` to test real queries.
+
+### Steps
+1. Create `internal/cli/integration_test.go` with `//go:build integration` tag
+2. Tests: `audit` against real Postgres, `check` with test repo, `scan` output validation
+3. Test fixture: SQL seed file creates tables, indexes, constraints for known findings
+4. GitHub Actions job: `services: postgres:16` with health check, `PGSPECTRE_TEST_DB_URL` env
+5. Makefile target: `make test-integration` runs with `-tags integration -race`
+6. Validate exit codes, JSON output structure, SARIF validity, baseline round-trip
+
+### Acceptance
+- `make test-integration` passes against local Postgres
+- CI runs integration tests on every PR
+- Coverage of `internal/postgres/` rises above 60%
+- Coverage of `internal/cli/` rises above 70%
+
+---
+
+## WO-20: Report filters
+
+**Goal:** Large databases produce hundreds of findings. Teams need `--min-severity` and `--type` filters to focus.
+
+### Steps
+1. Add `--min-severity high|medium|low|info` flag to `audit` and `check`
+2. Add `--type MISSING_TABLE,UNUSED_INDEX,...` inclusion filter (comma-separated)
+3. `filterBySeverity()` — maps severity string to int, filters findings below threshold
+4. `filterByType()` — inclusion filter, case-insensitive
+5. Filters apply AFTER analysis, BEFORE baseline/suppress, BEFORE reporting
+6. Summary line: "showing N of M findings (filtered by severity >= medium)"
+
+### Acceptance
+- `pgspectre audit --min-severity high` shows only high-severity findings
+- `pgspectre audit --type UNUSED_INDEX,BLOATED_INDEX` shows only those types
+- Filters compose: `--min-severity medium --type MISSING_TABLE` narrows both ways
+- `make test` passes with -race
+
+---
+
+## WO-21: Enriched findings
+
+**Goal:** "Unused index" is actionable. "Unused index (148MB, 0 scans since last vacuum 3 days ago)" is urgent.
+
+### Steps
+1. Add `Detail` map to `Finding` struct — key-value pairs of contextual data
+2. Unused index: add `size_bytes`, `idx_scan`, `last_vacuum`
+3. Unused table: add `estimated_rows`, `total_size_bytes`, `last_seq_scan`
+4. Missing vacuum: add `n_dead_tup`, `last_autovacuum`, `n_live_tup`
+5. Bloated index: add `index_size_bytes`, `table_size_bytes`, `bloat_ratio`
+6. Text reporter: render details as indented key-value pairs under finding
+7. JSON/SARIF: include details in output
+
+### Acceptance
+- Text output shows contextual details per finding
+- JSON output includes `detail` object on findings
+- SARIF `message.text` includes key details inline
+- No new queries — uses data already fetched by inspector
+- `make test` passes with -race
+
+---
+
+## WO-22: Schema filter
+
+**Goal:** Multi-tenant databases with 200+ schemas need `--schema` to scope analysis.
+
+### Steps
+1. Add `--schema` flag (comma-separated) to `audit` and `check` commands
+2. Default: `public` only (matches current behavior)
+3. `--schema '*'` or `--schema all` scans all non-system schemas
+4. Inspector queries add `WHERE schemaname IN (...)` clause
+5. Config file: `schemas: [public, app, reporting]` as persistent default
+6. Interact correctly with `exclude.schemas` — include wins over exclude
+
+### Acceptance
+- `pgspectre audit --schema public,reporting` scans only those schemas
+- `pgspectre audit --schema all` scans everything except pg_catalog, information_schema
+- Config file schemas apply when flag not set
+- `make test` passes with -race
+
+---
+
+## WO-23: Example configs and CONTRIBUTING.md
+
+**Goal:** New users need a starting point. Contributors need build/test/PR conventions.
+
+### Steps
+1. Create `examples/` directory:
+   - `examples/pgspectre.yml` — annotated config with all options, sensible defaults
+   - `examples/pgspectre-ignore.yml` — common suppression patterns (migration tables, pg_ prefixes)
+   - `examples/ci-github-actions.yml` — GitHub Actions workflow snippet using pgspectre
+2. Create `CONTRIBUTING.md`:
+   - Prerequisites (Go 1.22+, PostgreSQL 16 for integration tests)
+   - Build: `make build`, Test: `make test`, Lint: `make lint`
+   - Integration tests: `make test-integration` with local Postgres
+   - PR conventions: conventional commits, test coverage required
+   - Architecture: package responsibilities (scanner, analyzer, postgres, reporter, baseline, suppress)
+
+### Acceptance
+- `examples/` directory with 3 files
+- `CONTRIBUTING.md` in repo root
+- All example configs are valid YAML
+- `make test` still passes
+
+---
+
+## WO-24: Text report formatting
+
+**Goal:** Text output is functional but dense. Group findings by table, add severity indicators, improve scannability.
+
+### Steps
+1. Group findings by schema.table in text output
+2. Severity indicators: `[HIGH]`, `[MED]`, `[LOW]`, `[INFO]` prefixes with ANSI color when TTY
+3. Summary section: total findings, by severity, by type (top 3)
+4. Table of contents for large reports (>20 findings): list tables with finding counts
+5. `--no-color` flag disables ANSI (auto-disabled when piped)
+6. Consistent column alignment within groups
+
+### Acceptance
+- Text output groups by table with severity indicators
+- Colors work in terminal, auto-disabled in pipes
+- `--no-color` flag works
+- Summary section at bottom
+- `make test` passes with -race
+
+---
+
+## Phase 3: Distribution & Adoption
+
+---
+
+## WO-25: Docker image
+
+**Goal:** `docker run pgspectre audit --db-url ...` — zero install, works in any CI.
+
+### Steps
+1. Create `Dockerfile` — multi-stage: Go builder → `gcr.io/distroless/static-debian12`
+2. Single static binary, no shell, no package manager — minimal attack surface
+3. GoReleaser `docker` section: multi-arch manifest (amd64, arm64)
+4. GitHub Actions: build and push to `ghcr.io/ppiankov/pgspectre` on release tags
+5. `docker-compose.yml` example: pgspectre + postgres for local testing
+
+### Acceptance
+- `docker run ghcr.io/ppiankov/pgspectre version` works
+- Image < 20MB
+- Multi-arch: runs on amd64 and arm64
+- `docker-compose up` runs audit against bundled Postgres
+
+---
+
+## WO-26: Homebrew formula
+
+**Goal:** `brew install ppiankov/tap/pgspectre` — one command on macOS/Linux.
+
+### Steps
+1. GoReleaser `brews` section → auto-publish to `ppiankov/homebrew-tap`
+2. Formula: description, homepage, license, test block (`pgspectre version`)
+3. Release workflow: GoReleaser handles formula update on tag push
+4. Verify: `brew install --build-from-source` works on CI runner
+
+### Acceptance
+- `brew install ppiankov/tap/pgspectre` installs the binary
+- `pgspectre version` runs after install
+- Formula auto-updates on new release tags
+
+---
+
+## WO-27: GitHub Action
+
+**Goal:** `uses: ppiankov/pgspectre-action@v1` in any workflow — runs pgspectre, uploads SARIF.
+
+### Steps
+1. Create `ppiankov/pgspectre-action` repo with composite action
+2. Inputs: `db-url`, `repo-path`, `format`, `fail-on`, `min-severity`, `baseline`, `args`
+3. Steps: download release binary, run pgspectre, upload SARIF to GitHub Security tab
+4. Exit code passthrough: pgspectre's exit code becomes the step's exit code
+5. README with usage examples: audit-only, check with repo, SARIF upload
+
+### Acceptance
+- `uses: ppiankov/pgspectre-action@v1` works in a workflow
+- SARIF auto-uploads to Security tab when format=sarif
+- Exit codes propagate correctly for CI gating
+- Works without db-url for scan-only mode
+
+---
+
+## WO-28: First-run experience
+
+**Goal:** First invocation should guide, not confuse. Empty results need explanation, not silence.
+
+### Steps
+1. Summary header: show database host, database name, schema count, table count before findings
+2. Empty database: "No tables found in schema 'public'. Verify --db-url and --schema."
+3. No findings: "No issues detected. N tables, M indexes scanned."
+4. Connection banner: show Postgres version, connected user, database on verbose
+5. Exit code hint: "Exit code 2 means findings above threshold. Use --fail-on to configure."
+6. First-run hint: detect no config file, suggest `pgspectre audit --help` for options
+
+### Acceptance
+- First run against empty database shows helpful message
+- First run against populated database shows summary header
+- `--verbose` shows connection details
+- Hints appear only when relevant (no config → suggest config)
+- `make test` passes with -race
+
+---
+
 ## Non-Goals
 
 - No full SQL parser / AST — regex with multi-line buffering covers 80%+
