@@ -308,30 +308,20 @@ defaults:
 
 ---
 
-## WO-15: Index advisor
+## WO-15: Index advisor ✅
 
-**Goal:** Cross-reference WHERE/JOIN columns from code against database indexes. pgspectre's killer feature — it knows both your code and your database.
+**Status:** Complete — `ecfc25d`
 
-### Context
-Inspector already fetches index definitions (`pg_indexes`) and column stats (`pg_stat_user_indexes`). Scanner extracts column references with query context (SELECT/WHERE/JOIN). Cross-referencing them finds unindexed query patterns.
-
-### Detection
-- For each column referenced in WHERE/JOIN/ORDER BY context in code, check if a matching index exists
-- New finding type: `UNINDEXED_QUERY` (medium severity)
-- Message: "Column `orders.user_id` referenced in WHERE clause (14 locations) but has no index"
-- Include reference count to prioritize high-traffic columns
-
-### Steps
-1. Extend `internal/scanner/types.go` — add query context to `ColumnRef` (WHERE vs SELECT vs ORDER BY)
-2. Create `internal/analyzer/index_advisor.go` — cross-reference column refs against index definitions
-3. Filter: only flag columns in WHERE/JOIN/ORDER BY context (not SELECT-only)
-4. Composite index awareness: `(user_id, created_at)` covers `user_id` alone
-5. Wire into `check` command output
-
-### Acceptance
-- Detects unindexed WHERE columns
-- Composite indexes recognized as covering leftmost columns
-- `make test` passes with -race
+**Implementation:**
+- Added `ContextWhere` and `ContextOrderBy` to `scanner/types.go`; updated `extractConditionColumn` and `extractByColumn` in `patterns.go`
+- Created `internal/analyzer/index_advisor.go` — `DetectUnindexedQueries()`, `buildIndexedColumns()`, `parseIndexColumns()`, `isIndexableContext()`
+- Parses `CREATE INDEX ... (col1, col2)` definitions via regex, builds `schema.table.column` lookup
+- Composite index awareness: all columns in a composite index are individually covered
+- Filters: only WHERE/ORDER BY contexts flagged; unknown tables skipped; SELECT-only columns ignored
+- Finding type: `UNINDEXED_QUERY` (medium severity) with reference count
+- Wired into `Diff()` in `diff.go`
+- Created `internal/analyzer/index_advisor_test.go` — 6 test functions covering parse, basic detection, index exists, composite, ORDER BY, unknown table, buildIndexedColumns
+- 149 tests pass, lint clean, analyzer coverage 95.3%
 
 ---
 

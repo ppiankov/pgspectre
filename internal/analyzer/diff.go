@@ -105,6 +105,9 @@ func Diff(scan *scanner.ScanResult, snap *postgres.Snapshot, opts AuditOptions) 
 		}
 	}
 
+	// Detect unindexed query columns
+	findings = append(findings, DetectUnindexedQueries(scan.ColumnRefs, snap.Indexes, snap.Tables)...)
+
 	// Include audit findings for cluster-only issues
 	findings = append(findings, Audit(snap, opts)...)
 

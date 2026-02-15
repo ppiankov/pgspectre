@@ -249,7 +249,7 @@ func extractConditionColumn(m []string) []columnMatch {
 	if !isValidColumnName(col) {
 		return nil
 	}
-	return []columnMatch{{Column: col, Context: ContextSelect}}
+	return []columnMatch{{Column: col, Context: ContextWhere}}
 }
 
 func extractByColumn(m []string) []columnMatch {
@@ -257,7 +257,7 @@ func extractByColumn(m []string) []columnMatch {
 	if !isValidColumnName(col) {
 		return nil
 	}
-	return []columnMatch{{Column: col, Context: ContextSelect}}
+	return []columnMatch{{Column: col, Context: ContextOrderBy}}
 }
 
 func extractInsertColumns(m []string) []columnMatch {

@@ -18,6 +18,8 @@ const (
 	ContextUpdate  Context = "UPDATE"
 	ContextDelete  Context = "DELETE"
 	ContextDDL     Context = "DDL"
+	ContextWhere   Context = "WHERE"
+	ContextOrderBy Context = "ORDER_BY"
 	ContextUnknown Context = "UNKNOWN"
 )
 

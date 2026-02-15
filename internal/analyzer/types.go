@@ -24,6 +24,7 @@ const (
 	FindingMissingColumn     FindingType = "MISSING_COLUMN"
 	FindingUnreferencedTable FindingType = "UNREFERENCED_TABLE"
 	FindingCodeMatch         FindingType = "CODE_MATCH"
+	FindingUnindexedQuery    FindingType = "UNINDEXED_QUERY"
 	FindingOK                FindingType = "OK"
 )
 
