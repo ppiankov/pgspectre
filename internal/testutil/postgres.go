@@ -26,11 +26,6 @@ CREATE TABLE orders (
 	created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
-CREATE TABLE empty_table (
-	id SERIAL PRIMARY KEY,
-	data TEXT
-);
-
 CREATE INDEX idx_users_email ON users (email);
 CREATE INDEX idx_orders_user_id ON orders (user_id);
 CREATE INDEX idx_orders_created ON orders (created_at);
@@ -46,6 +41,12 @@ INSERT INTO orders (user_id, amount) VALUES
 	(2, 150.00);
 
 ANALYZE;
+
+-- Create empty_table AFTER ANALYZE so it has zero scan activity
+CREATE TABLE empty_table (
+	id SERIAL PRIMARY KEY,
+	data TEXT
+);
 `
 
 const testDBEnv = "PGSPECTRE_TEST_DB_URL"
