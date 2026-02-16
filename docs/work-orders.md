@@ -375,23 +375,18 @@ defaults:
 
 ---
 
-## WO-19: CLI integration tests with PostgreSQL
+## WO-19: CLI integration tests with PostgreSQL ✅
 
-**Goal:** CLI coverage is 43.2% — everything behind pgx is untested. Use GitHub Actions `services: postgres` to test real queries.
+**Status:** Complete — `b9da417`
 
-### Steps
-1. Create `internal/cli/integration_test.go` with `//go:build integration` tag
-2. Tests: `audit` against real Postgres, `check` with test repo, `scan` output validation
-3. Test fixture: SQL seed file creates tables, indexes, constraints for known findings
-4. GitHub Actions job: `services: postgres:16` with health check, `PGSPECTRE_TEST_DB_URL` env
-5. Makefile target: `make test-integration` runs with `-tags integration -race`
-6. Validate exit codes, JSON output structure, SARIF validity, baseline round-trip
-
-### Acceptance
-- `make test-integration` passes against local Postgres
-- CI runs integration tests on every PR
-- Coverage of `internal/postgres/` rises above 60%
-- Coverage of `internal/cli/` rises above 70%
+**Implementation:**
+- Refactored `os.Exit()` out of audit/check commands into `ExitError` type so tests can inspect exit codes
+- Created `internal/testutil/postgres.go` — shared testcontainer setup with `Setup()` and `SetupPostgres(t)`
+- Created `internal/cli/integration_test.go` — 10 integration tests: audit (JSON/text/SARIF/type-filter/baseline/exit-code/bad-URL), check (JSON/missing-table/parallel)
+- Uses testcontainers-go (Docker) instead of `services: postgres` — same behavior locally and in CI
+- Updated `Makefile` target to `./internal/...`, added `integration` job to CI workflow
+- Tests skip gracefully when Docker is unavailable
+- 215 unit tests pass, lint clean, CI passed
 
 ---
 
@@ -537,22 +532,17 @@ defaults:
 
 ---
 
-## WO-27: GitHub Action
+## WO-27: GitHub Action ✅
 
-**Goal:** `uses: ppiankov/pgspectre-action@v1` in any workflow — runs pgspectre, uploads SARIF.
+**Status:** Complete — `ppiankov/pgspectre-action` repo, tagged `v1`
 
-### Steps
-1. Create `ppiankov/pgspectre-action` repo with composite action
-2. Inputs: `db-url`, `repo-path`, `format`, `fail-on`, `min-severity`, `baseline`, `args`
-3. Steps: download release binary, run pgspectre, upload SARIF to GitHub Security tab
-4. Exit code passthrough: pgspectre's exit code becomes the step's exit code
-5. README with usage examples: audit-only, check with repo, SARIF upload
-
-### Acceptance
-- `uses: ppiankov/pgspectre-action@v1` works in a workflow
-- SARIF auto-uploads to Security tab when format=sarif
-- Exit codes propagate correctly for CI gating
-- Works without db-url for scan-only mode
+**Implementation:**
+- Created `ppiankov/pgspectre-action` repo with composite GitHub Action
+- `action.yml` — inputs: command, version, db-url, repo-path, format, fail-on, min-severity, baseline, args, upload-sarif
+- Steps: resolve version (latest via GitHub API), download release binary, build CLI args from inputs, run pgspectre, upload SARIF via `github/codeql-action/upload-sarif@v3`
+- Exit code passthrough: composite action inherits pgspectre exit codes
+- `README.md` with inputs table and 5 usage examples (audit, check, scan, SARIF, baseline)
+- Tagged `v1` for `uses: ppiankov/pgspectre-action@v1`
 
 ---
 
