@@ -92,7 +92,7 @@ func writeSARIF(w io.Writer, report *Report) error {
 		ruleSet[f.Type] = true
 	}
 
-	var rules []sarifRule
+	rules := make([]sarifRule, 0)
 	for ft := range ruleSet {
 		desc := ruleDescriptions[ft]
 		if desc == "" {

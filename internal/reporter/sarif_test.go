@@ -92,6 +92,15 @@ func TestWriteSARIF_Empty(t *testing.T) {
 	if len(log.Runs[0].Results) != 0 {
 		t.Errorf("expected 0 results, got %d", len(log.Runs[0].Results))
 	}
+	if log.Runs[0].Tool.Driver.Rules == nil {
+		t.Error("rules is nil, want empty array for valid SARIF")
+	}
+
+	// Verify rules serializes as [] not null
+	raw, _ := json.Marshal(log.Runs[0].Tool.Driver.Rules)
+	if string(raw) != "[]" {
+		t.Errorf("rules JSON = %s, want []", raw)
+	}
 }
 
 func TestWriteSARIF_ColumnInFQN(t *testing.T) {
