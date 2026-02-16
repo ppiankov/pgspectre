@@ -1,5 +1,6 @@
 # Binaries
 bin/
+pgspectre
 *.exe
 *.exe~
 *.dll
@@ -30,6 +31,7 @@ go.work
 
 # Context snapshots
 docs/context.txt
+notes/
 
 # OS
 .DS_Store
