@@ -39,12 +39,14 @@ type BuildInfo struct {
 }
 
 var (
-	dbURL   string
-	verbose bool
-	cfg     config.Config
+	dbURL        string
+	verbose      bool
+	cfg          config.Config
+	buildVersion string
 )
 
 func newRootCmd(info BuildInfo) *cobra.Command {
+	buildVersion = info.Version
 	root := &cobra.Command{
 		Use:          "pgspectre",
 		Short:        "PostgreSQL schema and usage auditor",
@@ -191,7 +193,7 @@ func newAuditCmd() *cobra.Command {
 				return err
 			}
 
-			report := reporter.NewReport("audit", findings)
+			report := reporter.NewReport("audit", findings, buildVersion)
 			report.Scanned = reporter.ScanContext{
 				Tables:  len(snap.Tables),
 				Indexes: len(snap.Indexes),
@@ -328,7 +330,7 @@ func newCheckCmd() *cobra.Command {
 				return err
 			}
 
-			report := reporter.NewReport("check", findings)
+			report := reporter.NewReport("check", findings, buildVersion)
 			report.Scanned = reporter.ScanContext{
 				Tables:  len(snap.Tables),
 				Indexes: len(snap.Indexes),
