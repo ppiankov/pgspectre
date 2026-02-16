@@ -16,7 +16,7 @@ var testFindings = []analyzer.Finding{
 }
 
 func TestNewReport_Summary(t *testing.T) {
-	r := NewReport("audit", testFindings)
+	r := NewReport("audit", testFindings, "test")
 
 	if r.Summary.Total != 3 {
 		t.Errorf("total = %d, want 3", r.Summary.Total)
@@ -42,7 +42,7 @@ func TestNewReport_Summary(t *testing.T) {
 }
 
 func TestNewReport_Empty(t *testing.T) {
-	r := NewReport("audit", nil)
+	r := NewReport("audit", nil, "test")
 
 	if r.Summary.Total != 0 {
 		t.Errorf("total = %d, want 0", r.Summary.Total)
@@ -56,7 +56,7 @@ func TestNewReport_Empty(t *testing.T) {
 }
 
 func TestWriteText(t *testing.T) {
-	r := NewReport("audit", testFindings)
+	r := NewReport("audit", testFindings, "test")
 	var buf bytes.Buffer
 	if err := Write(&buf, &r, FormatText); err != nil {
 		t.Fatal(err)
@@ -89,7 +89,7 @@ func TestWriteText(t *testing.T) {
 }
 
 func TestWriteText_Empty(t *testing.T) {
-	r := NewReport("audit", nil)
+	r := NewReport("audit", nil, "test")
 	var buf bytes.Buffer
 	if err := Write(&buf, &r, FormatText); err != nil {
 		t.Fatal(err)
@@ -100,7 +100,7 @@ func TestWriteText_Empty(t *testing.T) {
 }
 
 func TestWriteText_EmptyWithScanContext(t *testing.T) {
-	r := NewReport("audit", nil)
+	r := NewReport("audit", nil, "test")
 	r.Scanned = ScanContext{Tables: 42, Indexes: 15, Schemas: 2}
 	var buf bytes.Buffer
 	if err := Write(&buf, &r, FormatText); err != nil {
@@ -127,7 +127,7 @@ func TestWriteText_WithDetails(t *testing.T) {
 			Detail:  map[string]string{"size": "2.0 MB", "idx_scan": "0"},
 		},
 	}
-	r := NewReport("audit", findings)
+	r := NewReport("audit", findings, "test")
 	var buf bytes.Buffer
 	if err := Write(&buf, &r, FormatText); err != nil {
 		t.Fatal(err)
@@ -148,7 +148,7 @@ func TestWriteText_GroupsByTable(t *testing.T) {
 		{Type: analyzer.FindingNoPrimaryKey, Severity: analyzer.SeverityMedium, Schema: "public", Table: "logs", Message: "no PK"},
 		{Type: analyzer.FindingUnusedIndex, Severity: analyzer.SeverityMedium, Schema: "public", Table: "users", Index: "idx_b", Message: "unused"},
 	}
-	r := NewReport("audit", findings)
+	r := NewReport("audit", findings, "test")
 	var buf bytes.Buffer
 	if err := Write(&buf, &r, FormatText); err != nil {
 		t.Fatal(err)
@@ -171,7 +171,7 @@ func TestWriteText_TOC(t *testing.T) {
 			Message: "unused",
 		})
 	}
-	r := NewReport("audit", findings)
+	r := NewReport("audit", findings, "test")
 	var buf bytes.Buffer
 	if err := Write(&buf, &r, FormatText); err != nil {
 		t.Fatal(err)
@@ -182,7 +182,7 @@ func TestWriteText_TOC(t *testing.T) {
 }
 
 func TestWriteText_NoTOC(t *testing.T) {
-	r := NewReport("audit", testFindings) // 3 findings
+	r := NewReport("audit", testFindings, "test") // 3 findings
 	var buf bytes.Buffer
 	if err := Write(&buf, &r, FormatText); err != nil {
 		t.Fatal(err)
@@ -193,7 +193,7 @@ func TestWriteText_NoTOC(t *testing.T) {
 }
 
 func TestWriteText_NoColor(t *testing.T) {
-	r := NewReport("audit", testFindings)
+	r := NewReport("audit", testFindings, "test")
 	var buf bytes.Buffer
 	// bytes.Buffer is not a TTY, so color is auto-disabled
 	if err := Write(&buf, &r, FormatText); err != nil {
@@ -213,7 +213,7 @@ func TestWriteJSON_WithDetails(t *testing.T) {
 			Detail: map[string]string{"live_tuples": "100", "dead_tuples": "50"},
 		},
 	}
-	r := NewReport("audit", findings)
+	r := NewReport("audit", findings, "test")
 	var buf bytes.Buffer
 	if err := Write(&buf, &r, FormatJSON); err != nil {
 		t.Fatal(err)
@@ -228,7 +228,7 @@ func TestWriteJSON_WithDetails(t *testing.T) {
 }
 
 func TestWriteJSON(t *testing.T) {
-	r := NewReport("audit", testFindings)
+	r := NewReport("audit", testFindings, "test")
 	var buf bytes.Buffer
 	if err := Write(&buf, &r, FormatJSON); err != nil {
 		t.Fatal(err)
