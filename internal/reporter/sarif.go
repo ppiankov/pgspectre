@@ -158,7 +158,7 @@ func writeSARIF(w io.Writer, report *Report) error {
 				Tool: sarifTool{
 					Driver: sarifDriver{
 						Name:           "pgspectre",
-						Version:        "0.1.0",
+						Version:        report.Metadata.Version,
 						InformationURI: "https://github.com/ppiankov/pgspectre",
 						Rules:          rules,
 					},
