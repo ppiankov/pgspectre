@@ -1,5 +1,6 @@
 # Binaries
 bin/
+pgspectre
 *.exe
 *.exe~
 *.dll
@@ -29,6 +30,7 @@ go.work
 *.crt
 
 # Context snapshots
+notes/
 
 # OS
 .DS_Store
