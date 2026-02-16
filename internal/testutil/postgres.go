@@ -40,13 +40,16 @@ INSERT INTO orders (user_id, amount) VALUES
 	(1, 49.50),
 	(2, 150.00);
 
-ANALYZE;
-
--- Create empty_table AFTER ANALYZE so it has zero scan activity
 CREATE TABLE empty_table (
 	id SERIAL PRIMARY KEY,
 	data TEXT
 );
+
+ANALYZE;
+
+-- Reset empty_table stats so it reliably has seq_scan=0 / idx_scan=0
+SELECT pg_stat_reset_single_table_counters(c.oid)
+  FROM pg_class c WHERE c.relname = 'empty_table';
 `
 
 const testDBEnv = "PGSPECTRE_TEST_DB_URL"
