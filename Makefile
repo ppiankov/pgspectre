@@ -31,7 +31,7 @@ test:
 	@echo "Running tests..."
 	@go test -v -race -cover ./...
 
-## test-integration: Run integration tests (requires Docker)
+## test-integration: Run integration tests (requires PostgreSQL; set PGSPECTRE_TEST_DB_URL or use Docker)
 test-integration:
 	@echo "Running integration tests..."
 	@go test -race -tags=integration -count=1 -timeout=120s ./internal/...
