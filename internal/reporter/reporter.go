@@ -22,6 +22,7 @@ const (
 // Metadata holds report context.
 type Metadata struct {
 	Tool      string `json:"tool"`
+	Version   string `json:"version"`
 	Command   string `json:"command"`
 	Timestamp string `json:"timestamp"`
 }
@@ -52,7 +53,7 @@ type Report struct {
 }
 
 // NewReport builds a report from findings.
-func NewReport(command string, findings []analyzer.Finding) Report {
+func NewReport(command string, findings []analyzer.Finding, version string) Report {
 	var summary Summary
 	for _, f := range findings {
 		summary.Total++
@@ -75,6 +76,7 @@ func NewReport(command string, findings []analyzer.Finding) Report {
 	return Report{
 		Metadata: Metadata{
 			Tool:      "pgspectre",
+			Version:   version,
 			Command:   command,
 			Timestamp: time.Now().UTC().Format(time.RFC3339),
 		},

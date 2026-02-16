@@ -27,7 +27,7 @@ func TestWriteSARIF_ValidStructure(t *testing.T) {
 		},
 	}
 
-	report := NewReport("check", findings)
+	report := NewReport("check", findings, "test")
 	var buf bytes.Buffer
 	if err := Write(&buf, &report, FormatSARIF); err != nil {
 		t.Fatal(err)
@@ -79,7 +79,7 @@ func TestWriteSARIF_ValidStructure(t *testing.T) {
 }
 
 func TestWriteSARIF_Empty(t *testing.T) {
-	report := NewReport("audit", nil)
+	report := NewReport("audit", nil, "test")
 	var buf bytes.Buffer
 	if err := Write(&buf, &report, FormatSARIF); err != nil {
 		t.Fatal(err)
@@ -106,7 +106,7 @@ func TestWriteSARIF_ColumnInFQN(t *testing.T) {
 		},
 	}
 
-	report := NewReport("check", findings)
+	report := NewReport("check", findings, "test")
 	var buf bytes.Buffer
 	if err := Write(&buf, &report, FormatSARIF); err != nil {
 		t.Fatal(err)
@@ -132,7 +132,7 @@ func TestWriteSARIF_WithDetails(t *testing.T) {
 			Detail:  map[string]string{"size": "2.0 MB", "idx_scan": "0"},
 		},
 	}
-	report := NewReport("audit", findings)
+	report := NewReport("audit", findings, "test")
 	var buf bytes.Buffer
 	if err := Write(&buf, &report, FormatSARIF); err != nil {
 		t.Fatal(err)
@@ -165,7 +165,7 @@ func TestWriteSARIF_SeverityMapping(t *testing.T) {
 		findings := []analyzer.Finding{
 			{Type: analyzer.FindingMissingTable, Severity: tt.severity, Schema: "public", Table: "t"},
 		}
-		report := NewReport("test", findings)
+		report := NewReport("test", findings, "test")
 		var buf bytes.Buffer
 		if err := Write(&buf, &report, FormatSARIF); err != nil {
 			t.Fatal(err)
