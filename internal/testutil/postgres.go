@@ -3,6 +3,7 @@ package testutil
 import (
 	"context"
 	"fmt"
+	"os"
 	"testing"
 
 	"github.com/jackc/pgx/v5"
@@ -47,6 +48,8 @@ INSERT INTO orders (user_id, amount) VALUES
 ANALYZE;
 `
 
+const testDBEnv = "PGSPECTRE_TEST_DB_URL"
+
 // runPostgresContainer starts a PG container, recovering from panics if Docker is unavailable.
 func runPostgresContainer(ctx context.Context) (container *postgres.PostgresContainer, err error) {
 	defer func() {
@@ -61,11 +64,31 @@ func runPostgresContainer(ctx context.Context) (container *postgres.PostgresCont
 	)
 }
 
+func seedDatabase(ctx context.Context, connStr string) error {
+	conn, err := pgx.Connect(ctx, connStr)
+	if err != nil {
+		return fmt.Errorf("seed connect: %w", err)
+	}
+	if _, err := conn.Exec(ctx, SeedSQL); err != nil {
+		_ = conn.Close(ctx)
+		return fmt.Errorf("seed: %w", err)
+	}
+	return conn.Close(ctx)
+}
+
 // Setup starts a PostgreSQL container, seeds it with test data,
 // and returns the connection string and a cleanup function.
+// If PGSPECTRE_TEST_DB_URL is set, it seeds that database instead of Docker.
 // Returns an error if Docker is not available.
 func Setup() (string, func(), error) {
 	ctx := context.Background()
+
+	if connStr := os.Getenv(testDBEnv); connStr != "" {
+		if err := seedDatabase(ctx, connStr); err != nil {
+			return "", nil, fmt.Errorf("seed %s: %w", testDBEnv, err)
+		}
+		return connStr, func() {}, nil
+	}
 
 	container, err := runPostgresContainer(ctx)
 	if err != nil {
@@ -78,17 +101,10 @@ func Setup() (string, func(), error) {
 		return "", nil, fmt.Errorf("connection string: %w", err)
 	}
 
-	conn, err := pgx.Connect(ctx, connStr)
-	if err != nil {
+	if err := seedDatabase(ctx, connStr); err != nil {
 		_ = container.Terminate(ctx)
-		return "", nil, fmt.Errorf("seed connect: %w", err)
+		return "", nil, err
 	}
-	if _, err := conn.Exec(ctx, SeedSQL); err != nil {
-		_ = conn.Close(ctx)
-		_ = container.Terminate(ctx)
-		return "", nil, fmt.Errorf("seed: %w", err)
-	}
-	_ = conn.Close(ctx)
 
 	cleanup := func() {
 		_ = container.Terminate(ctx)
