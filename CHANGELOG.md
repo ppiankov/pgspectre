@@ -1,6 +1,14 @@
 # Changelog
 
-## [0.1.0] - 2026-02-16
+## [0.1.1] - 2026-02-16
+
+### Fixed
+- SARIF output now uses build version instead of hardcoded `0.1.0`
+- JSON report metadata includes `version` field
+- Integration tests use deterministic UNUSED_INDEX assertions
+- CI integration tests run against postgres service container
+
+## [0.1.0] - 2026-02-14
 
 ### Added
 - `audit` command — cluster-only analysis (unused tables/indexes, bloated indexes, missing vacuum, no primary key, duplicate indexes)
