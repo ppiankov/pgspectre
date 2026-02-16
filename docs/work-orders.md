@@ -567,6 +567,31 @@ defaults:
 
 ---
 
+## Future Roadmap (post-v0.1.x)
+
+### Performance Baselines
+Track query performance over time by storing `pg_stat_statements` snapshots. Detect regression when average execution time increases beyond a threshold. Requires `pg_stat_statements` extension.
+
+### Foreign Key Orphan Detection
+Find rows referencing non-existent parent rows (broken FK integrity). Useful for databases that dropped constraints for performance. Read-only sampling queries with configurable limits.
+
+### Table Dependency Graph
+Build and visualize FK dependency graph. Detect circular dependencies, deep chains, and isolated subgraphs. Output as DOT format for Graphviz rendering.
+
+### RDS/Cloud Metadata Integration
+For AWS RDS, GCP Cloud SQL, Azure Database: pull instance size, IOPS, storage, and compare against actual usage. Detect over-provisioned or under-provisioned instances.
+
+### ORM Model Sync Verification
+Deep ORM integration: parse GORM struct tags, SQLAlchemy models, Prisma schemas, and compare field-by-field against live database columns (types, nullability, defaults). Currently only detects missing tables/columns.
+
+### Historical Trend Reports
+Store audit results over time and generate trend reports: are unused tables growing? Are new drift findings appearing faster than old ones are resolved? Integrate with spectrehub for cross-tool trending.
+
+### GitLab CI Template
+Parallel to the GitHub Action — provide a GitLab CI template for `.gitlab-ci.yml` integration with SAST report upload.
+
+---
+
 ## Non-Goals
 
 - No full SQL parser / AST — regex with multi-line buffering covers 80%+
