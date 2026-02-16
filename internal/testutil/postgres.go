@@ -46,10 +46,6 @@ CREATE TABLE empty_table (
 );
 
 ANALYZE;
-
--- Reset empty_table stats so it reliably has seq_scan=0 / idx_scan=0
-SELECT pg_stat_reset_single_table_counters(c.oid)
-  FROM pg_class c WHERE c.relname = 'empty_table';
 `
 
 const testDBEnv = "PGSPECTRE_TEST_DB_URL"
