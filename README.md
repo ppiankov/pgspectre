@@ -45,6 +45,14 @@ pgspectre check --repo ./my-app --db-url "$DATABASE_URL"
 pgspectre audit --db-url "$DATABASE_URL" --format json
 ```
 
+### Agent Integration
+
+pgspectre is designed to be used by autonomous agents without plugins or SDKs. Single binary, deterministic output, structured JSON, bounded jobs.
+
+Agents: read [`SKILL.md`](SKILL.md) for commands, flags, JSON output structure, and parsing examples.
+
+Key pattern for agents: `pgspectre audit --db-url "$DATABASE_URL" --format json` then parse `.findings[]` for schema issues.
+
 ## Usage
 
 ### `audit` — Cluster-Only Analysis
@@ -54,8 +62,8 @@ Inspects PostgreSQL without code scanning. Detects:
 | Finding | Severity | Description |
 |---------|----------|-------------|
 | `UNUSED_TABLE` | high | Table has zero sequential and index scans |
-| `UNUSED_INDEX` | medium | Index has never been scanned |
-| `BLOATED_INDEX` | low | Unused index larger than 1 MB |
+| `UNUSED_INDEX` | medium | Index has zero scans and is larger than 100 MB |
+| `BLOATED_INDEX` | low | Index is larger than its table (with 1 MB floor) |
 | `MISSING_VACUUM` | low | Active table never vacuumed or not vacuumed in 30+ days |
 | `NO_PRIMARY_KEY` | medium | Table has no primary key constraint |
 | `DUPLICATE_INDEX` | low | Two indexes with identical definitions |
