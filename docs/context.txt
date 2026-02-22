@@ -1,0 +1,47 @@
+# pgspectre — Session Context
+
+## Current State
+- Version: 0.2.0
+- Status: Feature-complete for SpectreHub integration
+
+## What Exists
+- Three commands: audit (cluster-only), check (code + cluster diff), scan (offline code)
+- PostgreSQL catalog inspector with retry and exponential backoff
+- Code scanner: Go, Python, JS/TS, Java, Ruby, Rust, Prisma
+- Output formats: text, json, sarif, spectrehub (spectre/v1 envelope)
+- Baseline mode for incremental adoption
+- Finding suppression (inline, config, ignore file)
+- Config file (.pgspectre.yml) with thresholds and exclusions
+- Docker image, Homebrew formula, GitHub Action
+
+## Recent Changes (v0.2.0)
+- Added SpectreHub spectre/v1 envelope output format (--format spectrehub)
+- Added HashURI() to strip credentials before hashing connection URIs
+- Added unused_index_min_bytes threshold (default 100MB)
+- Bloated index detection compares index size to table size
+- Vacuum detection focuses on autovacuum history
+- Retry logic handles more PostgreSQL error codes
+- Invalid connection strings fail fast without retry
+- Added --fail-on-drift flag and finding type aliases
+
+## SpectreHub Integration
+- `--format spectrehub` emits spectre/v1 JSON envelope
+- Envelope fields: schema, tool, version, timestamp, target, findings[], summary
+- Target type: "postgresql", includes uri_hash and database
+- Findings mapped: type→id, severity→severity, schema.table[.index|.column]→location
+- HashURI strips credentials before SHA-256 hashing
+
+## Architecture
+- Entry: cmd/pgspectre/main.go (delegates to internal/)
+- CLI: internal/cli/ (Cobra)
+- Analyzer: internal/analyzer/ (audit logic)
+- Reporter: internal/reporter/ (text, json, sarif, spectrehub)
+- Scanner: internal/scanner/ (code scanning)
+- Postgres: internal/postgres/ (catalog inspector, retry)
+- Config: internal/config/ (YAML config)
+- Baseline: internal/baseline/ (finding persistence)
+- Suppress: internal/suppress/ (finding suppression)
+
+## Open Work Orders
+- WO-29: SpectreHub envelope — DONE
+- Remaining WOs in docs/work-orders.md

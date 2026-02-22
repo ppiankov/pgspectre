@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.2.0] - 2026-02-22
+
+### Added
+- SpectreHub `spectre/v1` envelope output format (`--format spectrehub`)
+- `HashURI()` function strips credentials before hashing connection URIs
+- `unused_index_min_bytes` threshold (default 100MB) to reduce noise on small indexes
+- `--fail-on-drift` flag for check command (alias for MISSING_COLUMN)
+- Finding type aliases (SCHEMA_DRIFT → MISSING_COLUMN)
+
+### Changed
+- Bloated index detection now compares index size to table size (via `pg_total_relation_size`)
+- Vacuum detection focuses on autovacuum history instead of manual vacuum
+- Retry logic handles more PostgreSQL error codes (connection class 08, 53300, 57P03)
+- Invalid connection strings fail fast without retry
+
+### Fixed
+- Parse config errors no longer trigger unnecessary retries
+
 ## [0.1.1] - 2026-02-16
 
 ### Fixed
