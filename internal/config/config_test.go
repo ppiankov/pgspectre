@@ -13,6 +13,9 @@ func TestDefaultConfig(t *testing.T) {
 	if cfg.Thresholds.VacuumDays != 30 {
 		t.Errorf("VacuumDays = %d, want 30", cfg.Thresholds.VacuumDays)
 	}
+	if cfg.Thresholds.UnusedIndexMinBytes != 100*1024*1024 {
+		t.Errorf("UnusedIndexMinBytes = %d, want %d", cfg.Thresholds.UnusedIndexMinBytes, 100*1024*1024)
+	}
 	if cfg.Thresholds.BloatMinBytes != 1024*1024 {
 		t.Errorf("BloatMinBytes = %d, want %d", cfg.Thresholds.BloatMinBytes, 1024*1024)
 	}
@@ -41,6 +44,7 @@ func TestLoad_FromDir(t *testing.T) {
 db_url: "postgres://localhost:5432/test"
 thresholds:
   vacuum_days: 14
+  unused_index_min_bytes: 104857600
   bloat_min_bytes: 2097152
 exclude:
   tables:
@@ -66,6 +70,9 @@ defaults:
 	}
 	if cfg.Thresholds.VacuumDays != 14 {
 		t.Errorf("VacuumDays = %d, want 14", cfg.Thresholds.VacuumDays)
+	}
+	if cfg.Thresholds.UnusedIndexMinBytes != 104857600 {
+		t.Errorf("UnusedIndexMinBytes = %d, want 104857600", cfg.Thresholds.UnusedIndexMinBytes)
 	}
 	if cfg.Thresholds.BloatMinBytes != 2097152 {
 		t.Errorf("BloatMinBytes = %d, want 2097152", cfg.Thresholds.BloatMinBytes)
@@ -153,6 +160,9 @@ thresholds:
 
 	if cfg.Thresholds.VacuumDays != 7 {
 		t.Errorf("VacuumDays = %d, want 7", cfg.Thresholds.VacuumDays)
+	}
+	if cfg.Thresholds.UnusedIndexMinBytes != 100*1024*1024 {
+		t.Errorf("UnusedIndexMinBytes = %d, want default %d", cfg.Thresholds.UnusedIndexMinBytes, 100*1024*1024)
 	}
 	// BloatMinBytes should remain default
 	if cfg.Thresholds.BloatMinBytes != 1024*1024 {

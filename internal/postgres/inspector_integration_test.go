@@ -5,9 +5,12 @@ package postgres
 import (
 	"context"
 	"fmt"
+	"net/url"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/ppiankov/pgspectre/internal/testutil"
 )
 
@@ -53,6 +56,9 @@ func TestIntegration_Inspector(t *testing.T) {
 		if tbl.Name == "users" {
 			if tbl.EstimatedRows <= 0 {
 				t.Errorf("users estimated_rows = %d, want > 0", tbl.EstimatedRows)
+			}
+			if tbl.SizeBytes <= 0 {
+				t.Errorf("users size_bytes = %d, want > 0", tbl.SizeBytes)
 			}
 			if tbl.Schema != "public" {
 				t.Errorf("users schema = %q, want public", tbl.Schema)
@@ -180,4 +186,75 @@ func TestIntegration_NewInspector_BadURL(t *testing.T) {
 		t.Error("expected error for bad URL")
 	}
 	fmt.Println("Expected error:", err)
+}
+
+func TestIntegration_Inspector_NonSuperuser(t *testing.T) {
+	connStr, cleanup := testutil.SetupPostgres(t)
+	defer cleanup()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	adminConn, err := pgx.Connect(ctx, connStr)
+	if err != nil {
+		t.Fatalf("admin connect: %v", err)
+	}
+	defer func() { _ = adminConn.Close(ctx) }()
+
+	parsed, err := url.Parse(connStr)
+	if err != nil {
+		t.Fatalf("parse conn string: %v", err)
+	}
+	dbName := strings.TrimPrefix(parsed.Path, "/")
+	if dbName == "" {
+		t.Fatalf("empty db name in conn string: %q", connStr)
+	}
+
+	roleName := fmt.Sprintf("pgspectre_reader_%d", time.Now().UnixNano())
+	rolePassword := "pgspectre_reader"
+
+	setupSQL := fmt.Sprintf(`
+		CREATE ROLE %s LOGIN PASSWORD '%s' NOSUPERUSER NOCREATEDB NOCREATEROLE;
+		GRANT CONNECT ON DATABASE %s TO %s;
+		GRANT USAGE ON SCHEMA public TO %s;
+		GRANT SELECT ON ALL TABLES IN SCHEMA public TO %s;
+		GRANT SELECT ON ALL SEQUENCES IN SCHEMA public TO %s;
+	`,
+		quoteIdentifier(roleName), rolePassword, quoteIdentifier(dbName), quoteIdentifier(roleName),
+		quoteIdentifier(roleName), quoteIdentifier(roleName), quoteIdentifier(roleName),
+	)
+	if _, err := adminConn.Exec(ctx, setupSQL); err != nil {
+		t.Skipf("skipping non-superuser role setup: %v", err)
+	}
+
+	parsed.User = url.UserPassword(roleName, rolePassword)
+	readerConnStr := parsed.String()
+
+	inspector, err := NewInspector(ctx, Config{URL: readerConnStr})
+	if err != nil {
+		t.Fatalf("NewInspector (non-superuser): %v", err)
+	}
+	defer inspector.Close()
+
+	snap, err := inspector.Inspect(ctx)
+	if err != nil {
+		t.Fatalf("Inspect (non-superuser): %v", err)
+	}
+
+	if len(snap.Tables) == 0 {
+		t.Fatal("expected tables for non-superuser")
+	}
+	if len(snap.Columns) == 0 {
+		t.Fatal("expected columns for non-superuser")
+	}
+	if len(snap.Indexes) == 0 {
+		t.Fatal("expected indexes for non-superuser")
+	}
+	if len(snap.Stats) == 0 {
+		t.Fatal("expected table stats for non-superuser")
+	}
+}
+
+func quoteIdentifier(s string) string {
+	return `"` + strings.ReplaceAll(s, `"`, `""`) + `"`
 }

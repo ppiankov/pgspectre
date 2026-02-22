@@ -16,6 +16,17 @@ func tableKey(schema, table string) string {
 
 // Audit analyzes a catalog snapshot and returns findings.
 func Audit(snap *postgres.Snapshot, opts AuditOptions) []Finding {
+	defaults := DefaultAuditOptions()
+	if opts.VacuumDays <= 0 {
+		opts.VacuumDays = defaults.VacuumDays
+	}
+	if opts.UnusedIndexMinBytes <= 0 {
+		opts.UnusedIndexMinBytes = defaults.UnusedIndexMinBytes
+	}
+	if opts.BloatMinBytes <= 0 {
+		opts.BloatMinBytes = defaults.BloatMinBytes
+	}
+
 	excludeTable := make(map[string]bool, len(opts.ExcludeTables))
 	for _, t := range opts.ExcludeTables {
 		excludeTable[strings.ToLower(t)] = true
@@ -26,12 +37,8 @@ func Audit(snap *postgres.Snapshot, opts AuditOptions) []Finding {
 	}
 
 	vacuumThreshold := time.Duration(opts.VacuumDays) * 24 * time.Hour
+	unusedIndexMin := opts.UnusedIndexMinBytes
 	bloatMin := opts.BloatMinBytes
-	statsMap := make(map[string]postgres.TableStats, len(snap.Stats))
-	for i := range snap.Stats {
-		s := &snap.Stats[i]
-		statsMap[tableKey(s.Schema, s.Name)] = *s
-	}
 
 	pkSet := make(map[string]bool)
 	for _, c := range snap.Constraints {
@@ -42,8 +49,8 @@ func Audit(snap *postgres.Snapshot, opts AuditOptions) []Finding {
 
 	tableSizeMap := make(map[string]int64, len(snap.Tables))
 	for _, t := range snap.Tables {
-		if t.EstimatedRows > 0 {
-			tableSizeMap[tableKey(t.Schema, t.Name)] = t.EstimatedRows
+		if t.SizeBytes > 0 {
+			tableSizeMap[tableKey(t.Schema, t.Name)] = t.SizeBytes
 		}
 	}
 
@@ -76,7 +83,7 @@ func Audit(snap *postgres.Snapshot, opts AuditOptions) []Finding {
 	var findings []Finding
 
 	findings = append(findings, detectUnusedTables(filteredStats)...)
-	findings = append(findings, detectUnusedIndexes(filteredIndexes)...)
+	findings = append(findings, detectUnusedIndexes(filteredIndexes, unusedIndexMin)...)
 	findings = append(findings, detectBloatedIndexes(filteredIndexes, tableSizeMap, bloatMin)...)
 	findings = append(findings, detectMissingVacuum(filteredStats, time.Now(), vacuumThreshold)...)
 	findings = append(findings, detectNoPrimaryKey(filteredTables, pkSet)...)
@@ -113,10 +120,10 @@ func detectUnusedTables(stats []postgres.TableStats) []Finding {
 	return findings
 }
 
-func detectUnusedIndexes(indexes []postgres.IndexInfo) []Finding {
+func detectUnusedIndexes(indexes []postgres.IndexInfo, minSizeBytes int64) []Finding {
 	var findings []Finding
 	for _, idx := range indexes {
-		if idx.IndexScans == 0 && idx.SizeBytes > 0 {
+		if idx.IndexScans == 0 && idx.SizeBytes > minSizeBytes {
 			findings = append(findings, Finding{
 				Type:     FindingUnusedIndex,
 				Severity: SeverityMedium,
@@ -136,41 +143,31 @@ func detectUnusedIndexes(indexes []postgres.IndexInfo) []Finding {
 }
 
 func detectBloatedIndexes(indexes []postgres.IndexInfo, tableSizeMap map[string]int64, bloatMin int64) []Finding {
-	// Group total index size by table
-	tableIndexSize := make(map[string]int64)
-	for _, idx := range indexes {
-		key := tableKey(idx.Schema, idx.Table)
-		tableIndexSize[key] += idx.SizeBytes
-	}
-
 	var findings []Finding
 	for _, idx := range indexes {
 		key := tableKey(idx.Schema, idx.Table)
-		estRows := tableSizeMap[key]
-		if estRows == 0 {
+		tableSize := tableSizeMap[key]
+		if tableSize <= 0 {
 			continue
 		}
-		// Flag individual indexes larger than the table's estimated row count
-		// (using estimated rows as a rough proxy — an index on a small table shouldn't be huge)
-		if idx.SizeBytes > 0 && tableIndexSize[key] > 0 {
-			// Simple heuristic: flag if this single index is larger than total index size / 2
-			// and the index has zero scans (already caught by unused, but bloat is about size)
-			// More useful: flag if index size exceeds a reasonable multiple of estimated rows
-			// For now: flag if index has 0 scans and is > 1MB
-			if idx.IndexScans == 0 && idx.SizeBytes > bloatMin {
-				findings = append(findings, Finding{
-					Type:     FindingBloatedIndex,
-					Severity: SeverityLow,
-					Schema:   idx.Schema,
-					Table:    idx.Table,
-					Index:    idx.Name,
-					Message:  fmt.Sprintf("unused index %q is %s", idx.Name, formatBytes(idx.SizeBytes)),
-					Detail: map[string]string{
-						"index_size_bytes": strconv.FormatInt(idx.SizeBytes, 10),
-						"index_size":       formatBytes(idx.SizeBytes),
-					},
-				})
-			}
+		if idx.SizeBytes <= bloatMin {
+			continue
+		}
+		if idx.SizeBytes > tableSize {
+			findings = append(findings, Finding{
+				Type:     FindingBloatedIndex,
+				Severity: SeverityLow,
+				Schema:   idx.Schema,
+				Table:    idx.Table,
+				Index:    idx.Name,
+				Message:  fmt.Sprintf("index %q (%s) is larger than table (%s)", idx.Name, formatBytes(idx.SizeBytes), formatBytes(tableSize)),
+				Detail: map[string]string{
+					"index_size_bytes": strconv.FormatInt(idx.SizeBytes, 10),
+					"index_size":       formatBytes(idx.SizeBytes),
+					"table_size_bytes": strconv.FormatInt(tableSize, 10),
+					"table_size":       formatBytes(tableSize),
+				},
+			})
 		}
 	}
 	return findings
@@ -193,27 +190,25 @@ func detectMissingVacuum(stats []postgres.TableStats, now time.Time, threshold t
 			detail["last_autovacuum"] = s.LastAutovacuum.Format(time.RFC3339)
 		}
 
-		lastVac := latestVacuum(s)
-		if lastVac == nil {
+		if s.LastAutovacuum == nil {
 			findings = append(findings, Finding{
 				Type:     FindingMissingVacuum,
 				Severity: SeverityLow,
 				Schema:   s.Schema,
 				Table:    s.Name,
-				Message:  "active table has never been vacuumed",
+				Message:  "active table has no autovacuum history",
 				Detail:   detail,
 			})
 			continue
 		}
 
-		if now.Sub(*lastVac) > threshold {
-			detail["last_vacuum"] = lastVac.Format(time.RFC3339)
+		if now.Sub(*s.LastAutovacuum) > threshold {
 			findings = append(findings, Finding{
 				Type:     FindingMissingVacuum,
 				Severity: SeverityLow,
 				Schema:   s.Schema,
 				Table:    s.Name,
-				Message:  fmt.Sprintf("last vacuum was %d days ago", int(now.Sub(*lastVac).Hours()/24)),
+				Message:  fmt.Sprintf("last autovacuum was %d days ago", int(now.Sub(*s.LastAutovacuum).Hours()/24)),
 				Detail:   detail,
 			})
 		}

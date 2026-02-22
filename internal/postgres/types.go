@@ -13,6 +13,7 @@ type TableInfo struct {
 	Name          string `json:"name"`
 	Type          string `json:"type"`          // BASE TABLE, VIEW, etc.
 	EstimatedRows int64  `json:"estimatedRows"` // from pg_class.reltuples
+	SizeBytes     int64  `json:"sizeBytes"`     // from pg_total_relation_size
 }
 
 // ColumnInfo describes a table column.

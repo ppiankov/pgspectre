@@ -15,6 +15,8 @@
 thresholds:
   # Days since last vacuum before flagging (default: 30)
   vacuum_days: 30
+  # Minimum unused index size in bytes to report (default: 104857600 = 100MB)
+  unused_index_min_bytes: 104857600
   # Minimum index size in bytes to flag as bloated (default: 1048576 = 1MB)
   bloat_min_bytes: 1048576
 
