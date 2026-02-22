@@ -31,8 +31,8 @@ Part of the **Spectre** family — code-vs-reality drift detection tools.
 brew install ppiankov/tap/pgspectre
 
 # Or download latest release
-curl -LO https://github.com/ppiankov/pgspectre/releases/latest/download/pgspectre_0.1.0_darwin_arm64.tar.gz
-tar -xzf pgspectre_0.1.0_darwin_arm64.tar.gz
+curl -LO https://github.com/ppiankov/pgspectre/releases/latest/download/pgspectre_0.2.0_darwin_arm64.tar.gz
+tar -xzf pgspectre_0.2.0_darwin_arm64.tar.gz
 sudo mv pgspectre /usr/local/bin/
 
 # Audit a cluster (no code scanning)
