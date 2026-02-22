@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"net/url"
 	"os"
 	"runtime"
 	"strings"
@@ -194,6 +195,8 @@ func newAuditCmd() *cobra.Command {
 			}
 
 			report := reporter.NewReport("audit", findings, buildVersion)
+			report.Metadata.URIHash = reporter.HashURI(dbURL)
+			report.Metadata.Database = extractDatabase(dbURL)
 			report.Scanned = reporter.ScanContext{
 				Tables:  len(snap.Tables),
 				Indexes: len(snap.Indexes),
@@ -224,7 +227,7 @@ func newAuditCmd() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVar(&format, "format", "text", "output format: text, json, or sarif")
+	cmd.Flags().StringVar(&format, "format", "text", "output format: text, json, sarif, or spectrehub")
 	cmd.Flags().StringVar(&failOn, "fail-on", "", "exit 2 if findings match (comma-separated types or severity: high,medium)")
 	cmd.Flags().StringVar(&minSeverity, "min-severity", "", "show only findings at or above this severity (high, medium, low, info)")
 	cmd.Flags().StringVar(&typeFilter, "type", "", "show only these finding types (comma-separated, e.g. UNUSED_INDEX,BLOATED_INDEX)")
@@ -242,6 +245,7 @@ func newCheckCmd() *cobra.Command {
 		format         string
 		failOn         string
 		failOnMissing  bool
+		failOnDrift    bool
 		minSeverity    string
 		typeFilter     string
 		schemaFlag     string
@@ -331,6 +335,8 @@ func newCheckCmd() *cobra.Command {
 			}
 
 			report := reporter.NewReport("check", findings, buildVersion)
+			report.Metadata.URIHash = reporter.HashURI(dbURL)
+			report.Metadata.Database = extractDatabase(dbURL)
 			report.Scanned = reporter.ScanContext{
 				Tables:  len(snap.Tables),
 				Indexes: len(snap.Indexes),
@@ -349,11 +355,8 @@ func newCheckCmd() *cobra.Command {
 				return fmt.Errorf("write report: %w", err)
 			}
 
-			// --fail-on-missing is an alias for --fail-on MISSING_TABLE
-			effectiveFailOn := failOn
-			if failOnMissing && effectiveFailOn == "" {
-				effectiveFailOn = "MISSING_TABLE"
-			}
+			// Backward-compatible aliases for common check failures.
+			effectiveFailOn := resolveCheckFailOn(failOn, failOnMissing, failOnDrift)
 			if effectiveFailOn != "" && shouldFailOn(findings, effectiveFailOn) {
 				return &ExitError{Code: 2}
 			}
@@ -367,9 +370,10 @@ func newCheckCmd() *cobra.Command {
 	}
 
 	cmd.Flags().StringVar(&repo, "repo", "", "path to code repository to scan")
-	cmd.Flags().StringVar(&format, "format", "text", "output format: text, json, or sarif")
+	cmd.Flags().StringVar(&format, "format", "text", "output format: text, json, sarif, or spectrehub")
 	cmd.Flags().StringVar(&failOn, "fail-on", "", "exit 2 if findings match (comma-separated types or severity: high,medium)")
 	cmd.Flags().BoolVar(&failOnMissing, "fail-on-missing", false, "exit 2 if any MISSING_TABLE found (deprecated, use --fail-on)")
+	cmd.Flags().BoolVar(&failOnDrift, "fail-on-drift", false, "exit 2 if any schema drift found (alias for MISSING_COLUMN, deprecated, use --fail-on)")
 	cmd.Flags().StringVar(&minSeverity, "min-severity", "", "show only findings at or above this severity (high, medium, low, info)")
 	cmd.Flags().StringVar(&typeFilter, "type", "", "show only these finding types (comma-separated, e.g. MISSING_TABLE,UNUSED_INDEX)")
 	cmd.Flags().StringVar(&schemaFlag, "schema", "", "schemas to analyze (comma-separated, or 'all' for all non-system schemas)")
@@ -431,7 +435,10 @@ func shouldFailOn(findings []analyzer.Finding, failOn string) bool {
 		case "high", "medium", "low", "info":
 			severities[lower] = true
 		default:
-			types[strings.ToUpper(p)] = true
+			t := canonicalFindingType(p)
+			if t != "" {
+				types[t] = true
+			}
 		}
 	}
 
@@ -444,6 +451,21 @@ func shouldFailOn(findings []analyzer.Finding, failOn string) bool {
 		}
 	}
 	return false
+}
+
+// resolveCheckFailOn resolves check-specific fail aliases when --fail-on is not explicitly set.
+func resolveCheckFailOn(failOn string, failOnMissing, failOnDrift bool) string {
+	if strings.TrimSpace(failOn) != "" {
+		return failOn
+	}
+	var parts []string
+	if failOnMissing {
+		parts = append(parts, string(analyzer.FindingMissingTable))
+	}
+	if failOnDrift {
+		parts = append(parts, string(analyzer.FindingMissingColumn))
+	}
+	return strings.Join(parts, ",")
 }
 
 // applyReportFilters applies --min-severity and --type filters to findings.
@@ -480,11 +502,27 @@ var severityOrder = map[string]int{
 	"high":   3,
 }
 
+// findingTypeAliases maps legacy names to current finding types.
+var findingTypeAliases = map[string]string{
+	"SCHEMA_DRIFT": string(analyzer.FindingMissingColumn),
+}
+
+func canonicalFindingType(t string) string {
+	t = strings.ToUpper(strings.TrimSpace(t))
+	if t == "" {
+		return ""
+	}
+	if alias, ok := findingTypeAliases[t]; ok {
+		return alias
+	}
+	return t
+}
+
 // filterByType keeps only findings matching the given types (comma-separated).
 func filterByType(findings []analyzer.Finding, typeFilter string) []analyzer.Finding {
 	types := make(map[string]bool)
 	for _, t := range strings.Split(typeFilter, ",") {
-		t = strings.TrimSpace(strings.ToUpper(t))
+		t = canonicalFindingType(t)
 		if t != "" {
 			types[t] = true
 		}
@@ -503,6 +541,15 @@ func filterByType(findings []analyzer.Finding, typeFilter string) []analyzer.Fin
 }
 
 // countSchemas returns the number of unique schemas in a snapshot.
+// extractDatabase returns the database name from a PostgreSQL connection URL.
+func extractDatabase(rawURL string) string {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return ""
+	}
+	return strings.TrimPrefix(u.Path, "/")
+}
+
 func countSchemas(snap *postgres.Snapshot) int {
 	schemas := make(map[string]bool)
 	for _, t := range snap.Tables {
@@ -541,10 +588,11 @@ func auditOptsFromConfig(includeSchemas []string) analyzer.AuditOptions {
 	}
 
 	return analyzer.AuditOptions{
-		VacuumDays:     cfg.Thresholds.VacuumDays,
-		BloatMinBytes:  cfg.Thresholds.BloatMinBytes,
-		ExcludeTables:  cfg.Exclude.Tables,
-		ExcludeSchemas: excludeSchemas,
+		VacuumDays:          cfg.Thresholds.VacuumDays,
+		UnusedIndexMinBytes: cfg.Thresholds.UnusedIndexMinBytes,
+		BloatMinBytes:       cfg.Thresholds.BloatMinBytes,
+		ExcludeTables:       cfg.Exclude.Tables,
+		ExcludeSchemas:      excludeSchemas,
 	}
 }
 

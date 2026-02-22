@@ -14,9 +14,10 @@ import (
 type Format string
 
 const (
-	FormatText  Format = "text"
-	FormatJSON  Format = "json"
-	FormatSARIF Format = "sarif"
+	FormatText       Format = "text"
+	FormatJSON       Format = "json"
+	FormatSARIF      Format = "sarif"
+	FormatSpectreHub Format = "spectrehub"
 )
 
 // Metadata holds report context.
@@ -25,6 +26,8 @@ type Metadata struct {
 	Version   string `json:"version"`
 	Command   string `json:"command"`
 	Timestamp string `json:"timestamp"`
+	URIHash   string `json:"uri_hash,omitempty"`
+	Database  string `json:"database,omitempty"`
 }
 
 // Summary counts findings by severity.
@@ -98,6 +101,8 @@ func Write(w io.Writer, report *Report, format Format, opts ...WriteOptions) err
 		return writeJSON(w, report)
 	case FormatSARIF:
 		return writeSARIF(w, report)
+	case FormatSpectreHub:
+		return writeSpectreHub(w, report)
 	default:
 		var opt WriteOptions
 		if len(opts) > 0 {
