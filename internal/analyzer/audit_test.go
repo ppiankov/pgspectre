@@ -94,25 +94,31 @@ func TestDetectUnusedTables_Detail(t *testing.T) {
 
 func TestDetectUnusedIndexes(t *testing.T) {
 	tests := []struct {
-		name    string
-		indexes []postgres.IndexInfo
-		want    int
+		name       string
+		indexes    []postgres.IndexInfo
+		minSize    int64
+		want       int
+		wantMedium bool
 	}{
-		{"no indexes", nil, 0},
-		{"used index", []postgres.IndexInfo{makeIndex("public", "users", "users_pkey", "CREATE ...", 8192, 100)}, 0},
-		{"unused with size", []postgres.IndexInfo{makeIndex("public", "users", "idx_old", "CREATE ...", 8192, 0)}, 1},
-		{"unused zero size", []postgres.IndexInfo{makeIndex("public", "users", "idx_empty", "CREATE ...", 0, 0)}, 0},
+		{"no indexes", nil, 1024, 0, false},
+		{"used index", []postgres.IndexInfo{makeIndex("public", "users", "users_pkey", "CREATE ...", 8192, 100)}, 1024, 0, false},
+		{"unused below threshold", []postgres.IndexInfo{makeIndex("public", "users", "idx_small", "CREATE ...", 512, 0)}, 1024, 0, false},
+		{"unused above threshold", []postgres.IndexInfo{makeIndex("public", "users", "idx_old", "CREATE ...", 8192, 0)}, 1024, 1, true},
+		{"unused equal threshold", []postgres.IndexInfo{makeIndex("public", "users", "idx_equal", "CREATE ...", 1024, 0)}, 1024, 0, false},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			findings := detectUnusedIndexes(tt.indexes)
+			findings := detectUnusedIndexes(tt.indexes, tt.minSize)
 			if len(findings) != tt.want {
 				t.Errorf("got %d findings, want %d", len(findings), tt.want)
 			}
 			for _, f := range findings {
 				if f.Type != FindingUnusedIndex {
 					t.Errorf("expected type UNUSED_INDEX, got %s", f.Type)
+				}
+				if tt.wantMedium && f.Severity != SeverityMedium {
+					t.Errorf("expected severity medium, got %s", f.Severity)
 				}
 			}
 		})
@@ -123,7 +129,7 @@ func TestDetectUnusedIndexes_Detail(t *testing.T) {
 	indexes := []postgres.IndexInfo{
 		makeIndex("public", "users", "idx_old", "CREATE ...", 8192, 0),
 	}
-	findings := detectUnusedIndexes(indexes)
+	findings := detectUnusedIndexes(indexes, 4096)
 	if len(findings) != 1 {
 		t.Fatalf("expected 1 finding, got %d", len(findings))
 	}
@@ -140,7 +146,7 @@ func TestDetectUnusedIndexes_Detail(t *testing.T) {
 }
 
 func TestDetectBloatedIndexes(t *testing.T) {
-	tableSizeMap := map[string]int64{"public.users": 1000}
+	tableSizeMap := map[string]int64{"public.users": 4 * 1024 * 1024}
 
 	tests := []struct {
 		name    string
@@ -148,9 +154,10 @@ func TestDetectBloatedIndexes(t *testing.T) {
 		want    int
 	}{
 		{"no indexes", nil, 0},
-		{"used index", []postgres.IndexInfo{makeIndex("public", "users", "idx_a", "CREATE ...", 2*1024*1024, 10)}, 0},
-		{"unused small index", []postgres.IndexInfo{makeIndex("public", "users", "idx_a", "CREATE ...", 512, 0)}, 0},
-		{"unused large index", []postgres.IndexInfo{makeIndex("public", "users", "idx_a", "CREATE ...", 2*1024*1024, 0)}, 1},
+		{"index smaller than table", []postgres.IndexInfo{makeIndex("public", "users", "idx_a", "CREATE ...", 2*1024*1024, 0)}, 0},
+		{"index larger than table", []postgres.IndexInfo{makeIndex("public", "users", "idx_big", "CREATE ...", 6*1024*1024, 10)}, 1},
+		{"index below bloat floor", []postgres.IndexInfo{makeIndex("public", "users", "idx_tiny", "CREATE ...", 512, 0)}, 0},
+		{"missing table size", []postgres.IndexInfo{makeIndex("public", "orders", "idx_orders", "CREATE ...", 6*1024*1024, 0)}, 0},
 	}
 
 	for _, tt := range tests {
@@ -184,6 +191,10 @@ func TestDetectMissingVacuum(t *testing.T) {
 		}}, 1},
 		{"active, never vacuumed", []postgres.TableStats{{
 			Schema: "public", Name: "users", SeqScan: 10,
+		}}, 1},
+		{"manual vacuum only still missing auto", []postgres.TableStats{{
+			Schema: "public", Name: "users", SeqScan: 10,
+			LastVacuum: &recent,
 		}}, 1},
 	}
 
@@ -267,8 +278,8 @@ func TestDetectDuplicateIndexes(t *testing.T) {
 func TestAudit_Integration(t *testing.T) {
 	snap := &postgres.Snapshot{
 		Tables: []postgres.TableInfo{
-			{Schema: "public", Name: "users", EstimatedRows: 1000},
-			{Schema: "public", Name: "logs", EstimatedRows: 0},
+			{Schema: "public", Name: "users", EstimatedRows: 1000, SizeBytes: 300 * 1024 * 1024},
+			{Schema: "public", Name: "logs", EstimatedRows: 0, SizeBytes: 1024},
 		},
 		Stats: []postgres.TableStats{
 			makeStats("public", "users", 100, 50),
@@ -276,7 +287,7 @@ func TestAudit_Integration(t *testing.T) {
 		},
 		Indexes: []postgres.IndexInfo{
 			makeIndex("public", "users", "users_pkey", "CREATE UNIQUE INDEX users_pkey ON users USING btree (id)", 8192, 50),
-			makeIndex("public", "users", "idx_unused", "CREATE INDEX idx_unused ON users (old_col)", 16384, 0),
+			makeIndex("public", "users", "idx_unused", "CREATE INDEX idx_unused ON users (old_col)", 200*1024*1024, 0),
 		},
 		Constraints: []postgres.ConstraintInfo{
 			makeConstraint("public", "users", "users_pkey", "p"),

@@ -42,17 +42,19 @@ type Finding struct {
 
 // AuditOptions controls thresholds and exclusions for analysis.
 type AuditOptions struct {
-	VacuumDays     int
-	BloatMinBytes  int64
-	ExcludeTables  []string
-	ExcludeSchemas []string
+	VacuumDays          int
+	UnusedIndexMinBytes int64
+	BloatMinBytes       int64
+	ExcludeTables       []string
+	ExcludeSchemas      []string
 }
 
 // DefaultAuditOptions returns sensible defaults matching the config defaults.
 func DefaultAuditOptions() AuditOptions {
 	return AuditOptions{
-		VacuumDays:    30,
-		BloatMinBytes: 1024 * 1024, // 1 MB
+		VacuumDays:          30,
+		UnusedIndexMinBytes: 100 * 1024 * 1024, // 100 MB
+		BloatMinBytes:       1024 * 1024,       // 1 MB
 	}
 }
 

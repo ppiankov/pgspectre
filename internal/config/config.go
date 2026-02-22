@@ -19,8 +19,9 @@ type Config struct {
 
 // Thresholds control detection sensitivity.
 type Thresholds struct {
-	VacuumDays    int   `yaml:"vacuum_days"`     // days since last vacuum to flag
-	BloatMinBytes int64 `yaml:"bloat_min_bytes"` // minimum index size to flag as bloated
+	VacuumDays          int   `yaml:"vacuum_days"`            // days since last autovacuum to flag
+	UnusedIndexMinBytes int64 `yaml:"unused_index_min_bytes"` // minimum unused index size to report
+	BloatMinBytes       int64 `yaml:"bloat_min_bytes"`        // minimum index size to flag as bloated
 }
 
 // Exclude lists tables, schemas, and finding types to skip during analysis.
@@ -40,8 +41,9 @@ type Defaults struct {
 func DefaultConfig() Config {
 	return Config{
 		Thresholds: Thresholds{
-			VacuumDays:    30,
-			BloatMinBytes: 1024 * 1024, // 1 MB
+			VacuumDays:          30,
+			UnusedIndexMinBytes: 100 * 1024 * 1024, // 100 MB
+			BloatMinBytes:       1024 * 1024,       // 1 MB
 		},
 		Defaults: Defaults{
 			Format:  "text",

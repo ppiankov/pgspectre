@@ -13,10 +13,13 @@ import (
 )
 
 const (
-	maxRetries    = 3
-	baseDelay     = 1 * time.Second
-	maxJitter     = 500 * time.Millisecond
-	authErrorCode = "28P01" // invalid_password
+	maxRetries           = 3
+	baseDelay            = 1 * time.Second
+	maxJitter            = 500 * time.Millisecond
+	authErrorCode        = "28P01" // invalid_password
+	invalidAuthSpecCode  = "28000" // invalid_authorization_specification
+	tooManyConnections   = "53300"
+	cannotConnectNowCode = "57P03"
 )
 
 // connectWithRetry wraps NewInspector logic with exponential backoff.
@@ -58,20 +61,41 @@ func connectWithRetry(ctx context.Context, cfg Config) (*Inspector, error) {
 
 // isRetryable classifies errors as retryable or fail-fast.
 func isRetryable(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, context.Canceled) {
+		return false
+	}
+
+	// Connection string parse/config errors are deterministic.
+	var parseErr *pgconn.ParseConfigError
+	if errors.As(err, &parseErr) {
+		return false
+	}
+
 	// Auth failures — fail fast
 	var pgErr *pgconn.PgError
 	if errors.As(err, &pgErr) {
-		if pgErr.Code == authErrorCode {
+		if pgErr.Code == authErrorCode || pgErr.Code == invalidAuthSpecCode {
 			return false
 		}
-	}
-
-	// Check for common auth error strings (some drivers wrap differently)
-	msg := err.Error()
-	if strings.Contains(msg, "password authentication failed") {
+		// Retry only known transient server-side connection failures.
+		if strings.HasPrefix(pgErr.Code, "08") || pgErr.Code == tooManyConnections || pgErr.Code == cannotConnectNowCode {
+			return true
+		}
 		return false
 	}
-	if strings.Contains(msg, "no pg_hba.conf entry") {
+
+	// Check for common wrapped fail-fast errors.
+	msg := strings.ToLower(err.Error())
+	if strings.Contains(msg, "password authentication failed") ||
+		strings.Contains(msg, "no pg_hba.conf entry") ||
+		strings.Contains(msg, "cannot parse `") ||
+		strings.Contains(msg, "failed to parse as keyword/value") ||
+		strings.Contains(msg, "failed to parse as url") ||
+		strings.Contains(msg, "invalid keyword/value") ||
+		strings.Contains(msg, "no such host") {
 		return false
 	}
 
@@ -85,14 +109,15 @@ func isRetryable(err error) bool {
 	if strings.Contains(msg, "connection refused") ||
 		strings.Contains(msg, "connection reset") ||
 		strings.Contains(msg, "i/o timeout") ||
+		strings.Contains(msg, "temporary failure in name resolution") ||
 		errors.Is(err, context.DeadlineExceeded) {
 		return true
 	}
 
-	// DNS resolution — retry (transient DNS failure)
+	// DNS resolution — retry only when explicitly marked temporary.
 	var dnsErr *net.DNSError
 	if errors.As(err, &dnsErr) {
-		return dnsErr.Temporary()
+		return dnsErr.IsTemporary
 	}
 
 	// Default: retry (unknown errors may be transient)

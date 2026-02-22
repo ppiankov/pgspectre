@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"strings"
 	"testing"
 	"time"
 
@@ -60,6 +61,34 @@ func TestIsRetryable_HBAError(t *testing.T) {
 	}
 }
 
+func TestIsRetryable_ParseConfigError(t *testing.T) {
+	err := pgconn.NewParseConfigError("not-a-url", "failed to parse as keyword/value", errors.New("invalid keyword/value"))
+	if isRetryable(err) {
+		t.Error("parse config errors should NOT be retryable")
+	}
+}
+
+func TestIsRetryable_NoSuchHost(t *testing.T) {
+	err := fmt.Errorf("lookup invalid: no such host")
+	if isRetryable(err) {
+		t.Error("no such host should NOT be retryable")
+	}
+}
+
+func TestIsRetryable_TooManyConnections(t *testing.T) {
+	err := &pgconn.PgError{Code: "53300", Message: "too many connections"}
+	if !isRetryable(err) {
+		t.Error("too many connections should be retryable")
+	}
+}
+
+func TestIsRetryable_InvalidCatalogName(t *testing.T) {
+	err := &pgconn.PgError{Code: "3D000", Message: "database does not exist"}
+	if isRetryable(err) {
+		t.Error("invalid catalog name should NOT be retryable")
+	}
+}
+
 func TestIsRetryable_NetOpError(t *testing.T) {
 	err := &net.OpError{Op: "dial", Err: errors.New("connection refused")}
 	if !isRetryable(err) {
@@ -110,5 +139,24 @@ func TestConnectWithRetry_ContextCanceled(t *testing.T) {
 	_, err := connectWithRetry(ctx, Config{URL: "postgres://localhost:1/test"})
 	if err == nil {
 		t.Fatal("expected error with canceled context")
+	}
+}
+
+func TestConnectWithRetry_InvalidURL_FailsFast(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	start := time.Now()
+	_, err := connectWithRetry(ctx, Config{URL: "not-a-url"})
+	elapsed := time.Since(start)
+
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "cannot parse `not-a-url`") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if elapsed >= baseDelay {
+		t.Fatalf("expected fail-fast without retry delay, took %v", elapsed)
 	}
 }

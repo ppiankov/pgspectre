@@ -6,7 +6,7 @@ CMD_PATH    = ./cmd/pgspectre
 VERSION    ?= dev
 GIT_COMMIT ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 BUILD_DATE ?= $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
-LDFLAGS     = -ldflags "-X main.version=$(VERSION) -X main.gitCommit=$(GIT_COMMIT) -X main.buildDate=$(BUILD_DATE) -s -w"
+LDFLAGS     = -ldflags "-X main.version=$(VERSION) -X main.commit=$(GIT_COMMIT) -X main.date=$(BUILD_DATE) -s -w"
 
 ## all: Run full CI pipeline
 all: clean deps fmt vet test build

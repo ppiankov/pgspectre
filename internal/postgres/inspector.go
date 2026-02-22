@@ -21,7 +21,7 @@ func NewInspector(ctx context.Context, cfg Config) (*Inspector, error) {
 func newInspectorOnce(ctx context.Context, cfg Config) (*Inspector, error) {
 	pool, err := pgxpool.New(ctx, cfg.URL)
 	if err != nil {
-		return nil, fmt.Errorf("connect: %w", err)
+		return nil, err
 	}
 
 	if err := pool.Ping(ctx); err != nil {
@@ -54,7 +54,8 @@ func (i *Inspector) GetTables(ctx context.Context) ([]TableInfo, error) {
 			t.table_schema,
 			t.table_name,
 			t.table_type,
-			COALESCE(c.reltuples::bigint, 0) AS estimated_rows
+			COALESCE(c.reltuples::bigint, 0) AS estimated_rows,
+			COALESCE(pg_catalog.pg_total_relation_size(c.oid), 0) AS size_bytes
 		FROM information_schema.tables t
 		LEFT JOIN pg_catalog.pg_class c
 			ON c.relname = t.table_name
@@ -74,7 +75,7 @@ func (i *Inspector) GetTables(ctx context.Context) ([]TableInfo, error) {
 	var tables []TableInfo
 	for rows.Next() {
 		var t TableInfo
-		if err := rows.Scan(&t.Schema, &t.Name, &t.Type, &t.EstimatedRows); err != nil {
+		if err := rows.Scan(&t.Schema, &t.Name, &t.Type, &t.EstimatedRows, &t.SizeBytes); err != nil {
 			return nil, fmt.Errorf("scan table: %w", err)
 		}
 		tables = append(tables, t)
