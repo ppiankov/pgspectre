@@ -1,7 +1,7 @@
 # pgspectre
-
 [![CI](https://github.com/ppiankov/pgspectre/actions/workflows/ci.yml/badge.svg)](https://github.com/ppiankov/pgspectre/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![ANCC](https://img.shields.io/badge/ANCC-compliant-brightgreen)](https://ancc.dev)
 
 PostgreSQL schema and usage auditor. Scans codebases for table/column/query references, compares with live Postgres schema and statistics, detects drift.
 
