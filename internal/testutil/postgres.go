@@ -44,8 +44,6 @@ CREATE TABLE empty_table (
 	id SERIAL PRIMARY KEY,
 	data TEXT
 );
-
-ANALYZE;
 `
 
 const testDBEnv = "PGSPECTRE_TEST_DB_URL"
