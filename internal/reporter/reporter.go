@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/ppiankov/pgspectre/internal/analyzer"
@@ -121,12 +122,18 @@ func writeJSON(w io.Writer, report *Report) error {
 
 var severityLabel = map[analyzer.Severity]string{
 	analyzer.SeverityHigh:   "HIGH",
-	analyzer.SeverityMedium: "MEDIUM",
+	analyzer.SeverityMedium: "MED",
 	analyzer.SeverityLow:    "LOW",
 	analyzer.SeverityInfo:   "INFO",
 }
 
-// tableGroup holds findings grouped by schema.table.
+const (
+	largeReportThreshold = 20
+	topTypesLimit        = 3
+	severityPrefixWidth  = len("[HIGH]")
+	unknownGroupLabel    = "<unknown>"
+)
+
 type tableGroup struct {
 	key      string
 	findings []analyzer.Finding
@@ -145,22 +152,12 @@ func writeText(w io.Writer, report *Report, useColor bool) error {
 
 	groups := groupByTable(report.Findings)
 
-	// Table of contents for large reports
-	if report.Summary.Total > 20 {
-		if _, err := fmt.Fprintln(w, "Tables with findings:"); err != nil {
-			return err
-		}
-		for _, g := range groups {
-			if _, err := fmt.Fprintf(w, "  %s (%d)\n", g.key, len(g.findings)); err != nil {
-				return err
-			}
-		}
-		if _, err := fmt.Fprintln(w); err != nil {
+	if report.Summary.Total > largeReportThreshold {
+		if err := writeTableOfContents(w, groups); err != nil {
 			return err
 		}
 	}
 
-	// Grouped findings
 	for i, g := range groups {
 		if i > 0 {
 			if _, err := fmt.Fprintln(w); err != nil {
@@ -175,84 +172,37 @@ func writeText(w io.Writer, report *Report, useColor bool) error {
 			return err
 		}
 
-		for _, f := range g.findings {
-			label := severityLabel[f.Severity]
-			if useColor {
-				c := severityColor[f.Severity]
-				label = c + label + colorReset
-			}
-
-			target := string(f.Type)
-			if f.Index != "" {
-				target += " (" + f.Index + ")"
-			}
-
-			if _, err := fmt.Fprintf(w, "  [%s] %s: %s\n", label, target, f.Message); err != nil {
-				return err
-			}
-
-			if len(f.Detail) > 0 {
-				keys := make([]string, 0, len(f.Detail))
-				for k := range f.Detail {
-					keys = append(keys, k)
-				}
-				sort.Strings(keys)
-				for _, k := range keys {
-					if _, err := fmt.Fprintf(w, "    %s: %s\n", k, f.Detail[k]); err != nil {
-						return err
-					}
-				}
-			}
-		}
-	}
-
-	// Summary
-	if _, err := fmt.Fprintf(w, "\nSummary: %d findings (high=%d medium=%d low=%d info=%d)\n",
-		report.Summary.Total, report.Summary.High, report.Summary.Medium, report.Summary.Low, report.Summary.Info); err != nil {
-		return err
-	}
-
-	// Top finding types
-	typeCounts := make(map[analyzer.FindingType]int)
-	for _, f := range report.Findings {
-		typeCounts[f.Type]++
-	}
-	type typeCount struct {
-		ft    analyzer.FindingType
-		count int
-	}
-	var sorted []typeCount
-	for ft, n := range typeCounts {
-		sorted = append(sorted, typeCount{ft, n})
-	}
-	sort.Slice(sorted, func(i, j int) bool { return sorted[i].count > sorted[j].count })
-	limit := 3
-	if len(sorted) < limit {
-		limit = len(sorted)
-	}
-	if _, err := fmt.Fprint(w, "Top types: "); err != nil {
-		return err
-	}
-	for i := 0; i < limit; i++ {
-		sep := ", "
-		if i == limit-1 {
-			sep = ""
-		}
-		if _, err := fmt.Fprintf(w, "%s (%d)%s", sorted[i].ft, sorted[i].count, sep); err != nil {
+		if err := writeGroupFindings(w, g, useColor); err != nil {
 			return err
 		}
 	}
-	_, err := fmt.Fprintln(w)
-	return err
+
+	if _, err := fmt.Fprintln(w, "\nSummary"); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(w, "  Total findings: %d\n", report.Summary.Total); err != nil {
+		return err
+	}
+	if err := writeSeveritySummary(w, report.Summary, useColor); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintln(w, "  Top types:"); err != nil {
+		return err
+	}
+	for _, entry := range topFindingTypes(report.Findings) {
+		if _, err := fmt.Fprintf(w, "    %-18s %d\n", entry.ft, entry.count); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
-// groupByTable groups findings by schema.table, preserving encounter order.
 func groupByTable(findings []analyzer.Finding) []tableGroup {
 	order := make(map[string]int)
 	var groups []tableGroup
 
 	for _, f := range findings {
-		key := f.Schema + "." + f.Table
+		key := tableGroupKey(&f)
 		idx, exists := order[key]
 		if !exists {
 			idx = len(groups)
@@ -263,4 +213,184 @@ func groupByTable(findings []analyzer.Finding) []tableGroup {
 	}
 
 	return groups
+}
+
+func writeTableOfContents(w io.Writer, groups []tableGroup) error {
+	if _, err := fmt.Fprintln(w, "Table of contents"); err != nil {
+		return err
+	}
+
+	width := 0
+	for _, g := range groups {
+		if len(g.key) > width {
+			width = len(g.key)
+		}
+	}
+
+	for _, g := range groups {
+		label := "findings"
+		if len(g.findings) == 1 {
+			label = "finding"
+		}
+		if _, err := fmt.Fprintf(w, "  %-*s  %2d %s\n", width, g.key, len(g.findings), label); err != nil {
+			return err
+		}
+	}
+
+	_, err := fmt.Fprintln(w)
+	return err
+}
+
+func writeGroupFindings(w io.Writer, group tableGroup, useColor bool) error {
+	typeWidth := 0
+	targetWidth := 0
+	for _, f := range group.findings {
+		if n := len(string(f.Type)); n > typeWidth {
+			typeWidth = n
+		}
+		if n := len(findingTarget(&f)); n > targetWidth {
+			targetWidth = n
+		}
+	}
+
+	for _, f := range group.findings {
+		if _, err := fmt.Fprintf(
+			w,
+			"  %s  %-*s",
+			severityPrefix(f.Severity, useColor),
+			typeWidth,
+			f.Type,
+		); err != nil {
+			return err
+		}
+
+		if targetWidth > 0 {
+			if _, err := fmt.Fprintf(w, "  %-*s", targetWidth, findingTarget(&f)); err != nil {
+				return err
+			}
+		}
+
+		if _, err := fmt.Fprintf(w, "  %s\n", f.Message); err != nil {
+			return err
+		}
+
+		if err := writeDetailLines(w, f.Detail); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func writeDetailLines(w io.Writer, detail map[string]string) error {
+	if len(detail) == 0 {
+		return nil
+	}
+
+	keys := make([]string, 0, len(detail))
+	width := 0
+	for k := range detail {
+		keys = append(keys, k)
+		if len(k) > width {
+			width = len(k)
+		}
+	}
+	sort.Strings(keys)
+
+	for _, k := range keys {
+		if _, err := fmt.Fprintf(w, "    %-*s  %s\n", width+1, k+":", detail[k]); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func writeSeveritySummary(w io.Writer, summary Summary, useColor bool) error {
+	if _, err := fmt.Fprintf(
+		w,
+		"  By severity: %s %d  %s %d  %s %d  %s %d\n",
+		summarySeverityPrefix(analyzer.SeverityHigh, useColor),
+		summary.High,
+		summarySeverityPrefix(analyzer.SeverityMedium, useColor),
+		summary.Medium,
+		summarySeverityPrefix(analyzer.SeverityLow, useColor),
+		summary.Low,
+		summarySeverityPrefix(analyzer.SeverityInfo, useColor),
+		summary.Info,
+	); err != nil {
+		return err
+	}
+	return nil
+}
+
+type findingTypeCount struct {
+	ft    analyzer.FindingType
+	count int
+}
+
+func topFindingTypes(findings []analyzer.Finding) []findingTypeCount {
+	typeCounts := make(map[analyzer.FindingType]int)
+	for _, f := range findings {
+		typeCounts[f.Type]++
+	}
+
+	sorted := make([]findingTypeCount, 0, len(typeCounts))
+	for ft, count := range typeCounts {
+		sorted = append(sorted, findingTypeCount{ft: ft, count: count})
+	}
+
+	sort.Slice(sorted, func(i, j int) bool {
+		if sorted[i].count == sorted[j].count {
+			return sorted[i].ft < sorted[j].ft
+		}
+		return sorted[i].count > sorted[j].count
+	})
+
+	if len(sorted) > topTypesLimit {
+		sorted = sorted[:topTypesLimit]
+	}
+
+	return sorted
+}
+
+func tableGroupKey(f *analyzer.Finding) string {
+	if f.Schema == "" && f.Table == "" {
+		return unknownGroupLabel
+	}
+	if f.Schema == "" {
+		return unknownGroupLabel + "." + f.Table
+	}
+	if f.Table == "" {
+		return f.Schema
+	}
+	return f.Schema + "." + f.Table
+}
+
+func findingTarget(f *analyzer.Finding) string {
+	switch {
+	case f.Index != "":
+		return f.Index
+	case f.Column != "":
+		return f.Column
+	default:
+		return ""
+	}
+}
+
+func severityPrefix(severity analyzer.Severity, useColor bool) string {
+	raw := "[" + severityLabel[severity] + "]"
+	padding := strings.Repeat(" ", severityPrefixWidth-len(raw))
+	if !useColor {
+		return raw + padding
+	}
+	return severityColor[severity] + raw + colorReset + padding
+}
+
+func summarySeverityPrefix(severity analyzer.Severity, useColor bool) string {
+	raw := "[" + severityLabel[severity] + "]"
+	if !useColor {
+		return raw
+	}
+	return severityColor[severity] + raw + colorReset
 }
