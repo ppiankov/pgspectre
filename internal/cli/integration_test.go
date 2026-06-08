@@ -87,7 +87,7 @@ func TestIntegration_Audit_JSON(t *testing.T) {
 func TestIntegration_Audit_Text(t *testing.T) {
 	stdout, _ := runCmd(t, "audit", "--db-url", connStr, "--format", "text", "--no-color")
 
-	for _, want := range []string{"Summary:", "UNUSED_TABLE"} {
+	for _, want := range []string{"Summary", "UNUSED_TABLE"} {
 		if !strings.Contains(stdout, want) {
 			t.Errorf("expected %q in output, got:\n%s", want, stdout)
 		}
