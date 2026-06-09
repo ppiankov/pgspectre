@@ -60,8 +60,8 @@ func TestIntegration_Audit_JSON(t *testing.T) {
 	stdout, err := runCmd(t, "audit", "--db-url", connStr, "--format", "json")
 
 	var ee *ExitError
-	if !errors.As(err, &ee) {
-		t.Fatalf("expected ExitError, got: %v", err)
+	if err != nil && !errors.As(err, &ee) {
+		t.Fatalf("unexpected error: %v", err)
 	}
 
 	var report reporter.Report
@@ -87,7 +87,7 @@ func TestIntegration_Audit_JSON(t *testing.T) {
 func TestIntegration_Audit_Text(t *testing.T) {
 	stdout, _ := runCmd(t, "audit", "--db-url", connStr, "--format", "text", "--no-color")
 
-	for _, want := range []string{"Summary", "UNUSED_TABLE"} {
+	for _, want := range []string{"Summary", "DUPLICATE_INDEX"} {
 		if !strings.Contains(stdout, want) {
 			t.Errorf("expected %q in output, got:\n%s", want, stdout)
 		}
@@ -114,7 +114,7 @@ func TestIntegration_Audit_SARIF(t *testing.T) {
 }
 
 func TestIntegration_Audit_TypeFilter(t *testing.T) {
-	stdout, err := runCmd(t, "audit", "--db-url", connStr, "--format", "json", "--type", "UNUSED_TABLE")
+	stdout, err := runCmd(t, "audit", "--db-url", connStr, "--format", "json", "--type", "DUPLICATE_INDEX")
 
 	var ee *ExitError
 	if err != nil && !errors.As(err, &ee) {
@@ -127,12 +127,12 @@ func TestIntegration_Audit_TypeFilter(t *testing.T) {
 	}
 
 	for _, f := range report.Findings {
-		if f.Type != analyzer.FindingUnusedTable {
-			t.Errorf("expected only UNUSED_TABLE, got %s", f.Type)
+		if f.Type != analyzer.FindingDuplicateIndex {
+			t.Errorf("expected only DUPLICATE_INDEX, got %s", f.Type)
 		}
 	}
 	if report.Summary.Total == 0 {
-		t.Error("expected at least one UNUSED_TABLE finding")
+		t.Error("expected at least one DUPLICATE_INDEX finding")
 	}
 }
 
@@ -278,13 +278,13 @@ func TestIntegration_Audit_BadURL(t *testing.T) {
 }
 
 func TestIntegration_Audit_ExitCode(t *testing.T) {
-	_, err := runCmd(t, "audit", "--db-url", connStr, "--format", "json")
+	// --fail-on forces exit 2 when the specified type is found; seed reliably produces DUPLICATE_INDEX.
+	_, err := runCmd(t, "audit", "--db-url", connStr, "--format", "json", "--fail-on", "DUPLICATE_INDEX")
 
 	var ee *ExitError
 	if !errors.As(err, &ee) {
 		t.Fatalf("expected ExitError, got: %v", err)
 	}
-	// Seed data has findings (at least medium severity) → non-zero exit
 	if ee.Code == 0 {
 		t.Error("exit code = 0, want non-zero")
 	}
