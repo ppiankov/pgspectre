@@ -48,15 +48,16 @@ CREATE TABLE empty_table (
 );
 `
 
-// resetStatsSQL zeros all table stats then re-establishes non-zero seq_scan on users and orders
-// so that empty_table remains at seq_scan=0/idx_scan=0 and triggers UNUSED_TABLE detection.
-// pg_stat_reset() is used instead of the per-table variant because PG 16 updated stats
-// asynchronously and the per-table reset is not guaranteed to take effect immediately.
-const resetStatsSQL = `
-SELECT pg_stat_reset();
-SELECT COUNT(*) FROM users;
-SELECT COUNT(*) FROM orders;
-`
+// disableAutovacuumSQL prevents autovacuum from scanning empty_table between seed and test,
+// which would increment seq_scan and prevent UNUSED_TABLE detection from firing.
+const disableAutovacuumSQL = `ALTER TABLE empty_table SET (autovacuum_enabled = false)`
+
+// pgStatResetSQL zeros all table stats.
+const pgStatResetSQL = `SELECT pg_stat_reset()`
+
+// reactivateTablesSQL re-establishes non-zero seq_scan on users and orders after the global
+// reset so that detectMissingVacuum fires for those tables (it skips seq_scan=0 tables).
+const reactivateTablesSQL = `SELECT COUNT(*) FROM users; SELECT COUNT(*) FROM orders`
 
 const testDBEnv = "PGSPECTRE_TEST_DB_URL"
 
@@ -83,9 +84,11 @@ func seedDatabase(ctx context.Context, connStr string) error {
 		_ = conn.Close(ctx)
 		return fmt.Errorf("seed: %w", err)
 	}
-	if _, err := conn.Exec(ctx, resetStatsSQL); err != nil {
-		_ = conn.Close(ctx)
-		return fmt.Errorf("reset stats: %w", err)
+	for _, sql := range []string{disableAutovacuumSQL, pgStatResetSQL, reactivateTablesSQL} {
+		if _, err := conn.Exec(ctx, sql); err != nil {
+			_ = conn.Close(ctx)
+			return fmt.Errorf("post-seed setup: %w", err)
+		}
 	}
 	return conn.Close(ctx)
 }
