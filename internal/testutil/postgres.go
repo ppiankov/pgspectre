@@ -41,12 +41,14 @@ INSERT INTO orders (user_id, amount) VALUES
 	(2, 150.00);
 `
 
-// postSeedSQL is executed after SeedSQL. empty_table is created after pg_stat_reset() so it
-// starts with zero scan counts — PG records stats from creation time, not retroactively.
-// autovacuum is disabled on it to prevent background scans before the tests run.
+// postSeedSQL is executed after SeedSQL. empty_table is created after pg_stat_reset() and
+// intentionally has no primary key or indexes — building a PK index performs a heap scan
+// that increments seq_scan before we can prevent it, defeating UNUSED_TABLE detection.
+// With no index, CREATE TABLE is pure DDL and leaves seq_scan=0. autovacuum is disabled
+// to prevent background scans before tests run.
 const postSeedSQL = `
 SELECT pg_stat_reset();
-CREATE TABLE empty_table (id SERIAL PRIMARY KEY, data TEXT);
+CREATE TABLE empty_table (id INTEGER, data TEXT);
 ALTER TABLE empty_table SET (autovacuum_enabled = false);
 `
 
