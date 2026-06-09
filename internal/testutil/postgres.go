@@ -48,13 +48,14 @@ CREATE TABLE empty_table (
 );
 `
 
-// resetUnusedTableSQL zeros seq_scan/idx_scan on empty_table so detectUnusedTables fires.
-// Seeding increments scan counts via DDL; this resets them surgically without affecting other tables.
-const resetUnusedTableSQL = `
-SELECT pg_stat_reset_single_table_counters(c.oid)
-FROM pg_class c
-JOIN pg_namespace n ON n.oid = c.relnamespace
-WHERE n.nspname = 'public' AND c.relname = 'empty_table';
+// resetStatsSQL zeros all table stats then re-establishes non-zero seq_scan on users and orders
+// so that empty_table remains at seq_scan=0/idx_scan=0 and triggers UNUSED_TABLE detection.
+// pg_stat_reset() is used instead of the per-table variant because PG 16 updated stats
+// asynchronously and the per-table reset is not guaranteed to take effect immediately.
+const resetStatsSQL = `
+SELECT pg_stat_reset();
+SELECT COUNT(*) FROM users;
+SELECT COUNT(*) FROM orders;
 `
 
 const testDBEnv = "PGSPECTRE_TEST_DB_URL"
@@ -82,7 +83,7 @@ func seedDatabase(ctx context.Context, connStr string) error {
 		_ = conn.Close(ctx)
 		return fmt.Errorf("seed: %w", err)
 	}
-	if _, err := conn.Exec(ctx, resetUnusedTableSQL); err != nil {
+	if _, err := conn.Exec(ctx, resetStatsSQL); err != nil {
 		_ = conn.Close(ctx)
 		return fmt.Errorf("reset stats: %w", err)
 	}
