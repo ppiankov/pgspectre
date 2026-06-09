@@ -87,7 +87,7 @@ func TestIntegration_Audit_JSON(t *testing.T) {
 func TestIntegration_Audit_Text(t *testing.T) {
 	stdout, _ := runCmd(t, "audit", "--db-url", connStr, "--format", "text", "--no-color")
 
-	for _, want := range []string{"Summary", "DUPLICATE_INDEX"} {
+	for _, want := range []string{"Summary", "UNUSED_TABLE", "DUPLICATE_INDEX"} {
 		if !strings.Contains(stdout, want) {
 			t.Errorf("expected %q in output, got:\n%s", want, stdout)
 		}
@@ -114,6 +114,29 @@ func TestIntegration_Audit_SARIF(t *testing.T) {
 }
 
 func TestIntegration_Audit_TypeFilter(t *testing.T) {
+	stdout, err := runCmd(t, "audit", "--db-url", connStr, "--format", "json", "--type", "UNUSED_TABLE")
+
+	var ee *ExitError
+	if err != nil && !errors.As(err, &ee) {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var report reporter.Report
+	if err := json.Unmarshal([]byte(stdout), &report); err != nil {
+		t.Fatalf("invalid JSON: %v\n%s", err, stdout)
+	}
+
+	for _, f := range report.Findings {
+		if f.Type != analyzer.FindingUnusedTable {
+			t.Errorf("expected only UNUSED_TABLE, got %s", f.Type)
+		}
+	}
+	if report.Summary.Total == 0 {
+		t.Error("expected at least one UNUSED_TABLE finding")
+	}
+}
+
+func TestIntegration_Audit_TypeFilter_DuplicateIndex(t *testing.T) {
 	stdout, err := runCmd(t, "audit", "--db-url", connStr, "--format", "json", "--type", "DUPLICATE_INDEX")
 
 	var ee *ExitError

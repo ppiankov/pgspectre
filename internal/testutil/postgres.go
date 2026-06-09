@@ -11,6 +11,8 @@ import (
 )
 
 // SeedSQL creates tables, indexes, constraints, and data for integration tests.
+// empty_table is intentionally left without data or queries so it can be used
+// to test UNUSED_TABLE detection. Its stats are reset after seeding via resetUnusedTableSQL.
 const SeedSQL = `
 CREATE TABLE users (
 	id SERIAL PRIMARY KEY,
@@ -46,6 +48,15 @@ CREATE TABLE empty_table (
 );
 `
 
+// resetUnusedTableSQL zeros seq_scan/idx_scan on empty_table so detectUnusedTables fires.
+// Seeding increments scan counts via DDL; this resets them surgically without affecting other tables.
+const resetUnusedTableSQL = `
+SELECT pg_stat_reset_single_table_counters(c.oid)
+FROM pg_class c
+JOIN pg_namespace n ON n.oid = c.relnamespace
+WHERE n.nspname = 'public' AND c.relname = 'empty_table';
+`
+
 const testDBEnv = "PGSPECTRE_TEST_DB_URL"
 
 // runPostgresContainer starts a PG container, recovering from panics if Docker is unavailable.
@@ -70,6 +81,10 @@ func seedDatabase(ctx context.Context, connStr string) error {
 	if _, err := conn.Exec(ctx, SeedSQL); err != nil {
 		_ = conn.Close(ctx)
 		return fmt.Errorf("seed: %w", err)
+	}
+	if _, err := conn.Exec(ctx, resetUnusedTableSQL); err != nil {
+		_ = conn.Close(ctx)
+		return fmt.Errorf("reset stats: %w", err)
 	}
 	return conn.Close(ctx)
 }
