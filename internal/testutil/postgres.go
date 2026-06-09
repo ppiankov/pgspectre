@@ -11,8 +11,6 @@ import (
 )
 
 // SeedSQL creates tables, indexes, constraints, and data for integration tests.
-// empty_table is intentionally left without data or queries so it can be used
-// to test UNUSED_TABLE detection. Its stats are reset after seeding via resetUnusedTableSQL.
 const SeedSQL = `
 CREATE TABLE users (
 	id SERIAL PRIMARY KEY,
@@ -41,23 +39,16 @@ INSERT INTO orders (user_id, amount) VALUES
 	(1, 99.99),
 	(1, 49.50),
 	(2, 150.00);
-
-CREATE TABLE empty_table (
-	id SERIAL PRIMARY KEY,
-	data TEXT
-);
 `
 
-// disableAutovacuumSQL prevents autovacuum from scanning empty_table between seed and test,
-// which would increment seq_scan and prevent UNUSED_TABLE detection from firing.
-const disableAutovacuumSQL = `ALTER TABLE empty_table SET (autovacuum_enabled = false)`
-
-// pgStatResetSQL zeros all table stats.
-const pgStatResetSQL = `SELECT pg_stat_reset()`
-
-// reactivateTablesSQL re-establishes non-zero seq_scan on users and orders after the global
-// reset so that detectMissingVacuum fires for those tables (it skips seq_scan=0 tables).
-const reactivateTablesSQL = `SELECT COUNT(*) FROM users; SELECT COUNT(*) FROM orders`
+// postSeedSQL is executed after SeedSQL. empty_table is created after pg_stat_reset() so it
+// starts with zero scan counts — PG records stats from creation time, not retroactively.
+// autovacuum is disabled on it to prevent background scans before the tests run.
+const postSeedSQL = `
+SELECT pg_stat_reset();
+CREATE TABLE empty_table (id SERIAL PRIMARY KEY, data TEXT);
+ALTER TABLE empty_table SET (autovacuum_enabled = false);
+`
 
 const testDBEnv = "PGSPECTRE_TEST_DB_URL"
 
@@ -84,11 +75,9 @@ func seedDatabase(ctx context.Context, connStr string) error {
 		_ = conn.Close(ctx)
 		return fmt.Errorf("seed: %w", err)
 	}
-	for _, sql := range []string{disableAutovacuumSQL, pgStatResetSQL, reactivateTablesSQL} {
-		if _, err := conn.Exec(ctx, sql); err != nil {
-			_ = conn.Close(ctx)
-			return fmt.Errorf("post-seed setup: %w", err)
-		}
+	if _, err := conn.Exec(ctx, postSeedSQL); err != nil {
+		_ = conn.Close(ctx)
+		return fmt.Errorf("post-seed: %w", err)
 	}
 	return conn.Close(ctx)
 }
